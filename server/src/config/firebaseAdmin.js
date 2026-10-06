@@ -4,7 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import jwt from 'jsonwebtoken';
 
 const getFirebaseAuth = () => {
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON && process.env.NODE_ENV !== 'production') {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     return null;
   }
   if (!getApps().length) {
