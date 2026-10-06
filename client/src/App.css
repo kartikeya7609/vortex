@@ -1,0 +1,575 @@
+/* Liquid Glass Application & Game HUD Component Styles */
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-xl) var(--space-lg) var(--space-2xl);
+  background-color: transparent;
+}
+
+.app-content {
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* HEADER GLASS HUD */
+.header-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-xl);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--glass-shadow);
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.avengers-logo-badge {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--marvel-red), var(--marvel-red-dark));
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px var(--glow-red);
+}
+
+.logo-letter {
+  font-family: var(--font-action);
+  font-size: 2rem;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  font-size: 1.6rem;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: 1.5px;
+}
+
+.brand-subtitle {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--marvel-cyan);
+  margin-top: 2px;
+  letter-spacing: 1px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* SCOREBOARD / STATS BAR GLASS HUD */
+.scoreboard-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--glass-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.score-block {
+  background: var(--glass-bg);
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.score-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 1.2px;
+}
+
+.score-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.progress-score-block {
+  min-width: 0;
+}
+
+.score-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.score-value-sm {
+  font-size: 1.05rem;
+  color: var(--marvel-gold);
+}
+
+.score-progress-track {
+  width: 100%;
+  height: 8px;
+  background: var(--glass-bg-alt);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-top: var(--space-xs);
+  border: 1px solid var(--glass-border);
+}
+
+.score-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--marvel-red), var(--marvel-gold));
+  transition: width 0.3s ease;
+  box-shadow: 0 0 10px var(--glow-gold);
+}
+
+/* GAME BOARD LAYOUT */
+.game-main-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  align-items: center;
+  width: 100%;
+}
+
+.board-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+}
+
+.submission-banner {
+  padding: 10px 22px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+  animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.banner-correct {
+  background: rgba(16, 185, 129, 0.25);
+  color: #a7f3d0;
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 20px var(--glow-emerald);
+}
+
+.banner-wrong {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 20px var(--glow-red);
+}
+
+.banner-text {
+  font-size: 1.15rem;
+  letter-spacing: 1.2px;
+}
+
+@keyframes boardShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.95); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.board-shake {
+  animation: boardShake 0.4s ease;
+}
+
+.game-board-grid {
+  width: 440px;
+  height: 440px;
+  max-width: 90vw;
+  max-height: 90vw;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 2px solid var(--glass-border-strong);
+  border-radius: var(--radius-xl);
+  padding: var(--space-md);
+  display: grid;
+  gap: 2px;
+  position: relative;
+  box-shadow: var(--glass-shadow);
+}
+
+.game-board-grid.board-solved {
+  border-color: var(--marvel-gold);
+  box-shadow: 0 0 30px var(--glow-gold);
+}
+
+.ghost-blueprint-img {
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-md);
+  right: var(--space-md);
+  bottom: var(--space-md);
+  background-size: cover;
+  background-position: center;
+  opacity: 0.18;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: var(--radius-md);
+}
+
+/* BOARD CELL GLASS TILES */
+.board-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  user-select: none;
+  z-index: 1;
+  transition: all 0.15s ease;
+}
+
+.board-cell.cell-empty {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px dashed var(--glass-border);
+}
+
+.board-cell.cell-empty:hover {
+  border-color: var(--marvel-cyan);
+  background: var(--glass-bg-active);
+  box-shadow: inset 0 0 10px var(--glow-cyan);
+}
+
+.board-cell.cell-filled {
+  border: 1px solid var(--glass-border);
+  cursor: grab;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.board-cell.cell-filled:active {
+  cursor: grabbing;
+}
+
+.board-cell.cell-selected {
+  outline: 3px solid var(--marvel-gold);
+  outline-offset: -1px;
+  box-shadow: 0 0 16px var(--glow-gold);
+}
+
+.board-cell.cell-hover {
+  outline: 3px solid var(--marvel-cyan);
+  outline-offset: -1px;
+  box-shadow: 0 0 16px var(--glow-cyan);
+}
+
+.board-cell.cell-correct {
+  border-color: rgba(16, 185, 129, 0.8);
+}
+
+.board-cell.cell-wrong {
+  outline: 2px solid var(--marvel-red);
+  outline-offset: -1px;
+}
+
+.tile-piece {
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  position: relative;
+}
+
+.tile-number {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  color: #ffffff;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  line-height: 1.1;
+  pointer-events: none;
+}
+
+.empty-cell-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cell-pos {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* PIECES TRAY GLASS PANEL */
+.tray-panel {
+  width: 100%;
+  padding: var(--space-md) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--glass-shadow);
+}
+
+.tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tray-title {
+  font-size: 1.25rem;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.tray-counter {
+  font-size: 0.8rem;
+  color: var(--marvel-cyan);
+}
+
+.tray-grid {
+  display: grid;
+  gap: var(--space-sm);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: var(--space-sm);
+  background: rgba(6, 8, 13, 0.6);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+}
+
+.tray-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  transition: all 0.15s ease;
+}
+
+.tray-cell.cell-empty {
+  border: 1px dashed var(--glass-border);
+  background: transparent;
+  cursor: default;
+}
+
+.tray-cell.cell-filled {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+}
+
+.tray-cell.cell-filled:hover {
+  border-color: var(--marvel-cyan);
+  box-shadow: 0 0 10px var(--glow-cyan);
+}
+
+.tray-cell.cell-selected {
+  outline: 3px solid var(--marvel-gold);
+  outline-offset: -1px;
+}
+
+.tray-cell.cell-hover {
+  outline: 3px solid var(--marvel-red);
+}
+
+.empty-slot-num {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.tray-all-placed {
+  text-align: center;
+  padding: var(--space-lg);
+}
+
+.tray-empty-text {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* CONTROLS GLASS PANEL */
+.controls-container {
+  width: 100%;
+  padding: var(--space-md) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--glass-shadow);
+}
+
+.controls-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.control-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.segmented-tabs {
+  display: flex;
+  background: rgba(6, 8, 13, 0.7);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  gap: 3px;
+}
+
+.tab-btn {
+  font-family: var(--font-action);
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: #ffffff;
+}
+
+.tab-btn.tab-active {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--marvel-red), var(--marvel-red-dark));
+  font-weight: 700;
+  box-shadow: 0 2px 10px var(--glow-red);
+}
+
+.controls-actions-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.controls-actions-row button {
+  flex: 1;
+}
+
+/* LIQUID GLASS MODALS */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  z-index: 1000;
+}
+
+.modal-box {
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--glass-shadow);
+}
+
+.modal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-heading {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-close {
+  width: 36px;
+  height: 36px;
+  font-size: 1rem;
+}
+
+.modal-description {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
