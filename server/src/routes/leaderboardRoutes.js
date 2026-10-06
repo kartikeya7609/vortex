@@ -7,6 +7,7 @@ import {
   unfreezeLeaderboard,
   setLeaderboardPublishState,
   grantManualRoundUnlock,
+  revokeManualRoundUnlock,
 } from '../services/rankingService.js';
 import { logAdminAudit, findTeamById } from '../services/store.js';
 import { emitLeaderboardUpdated, notifyAdminLiveStateUpdate } from '../services/socketService.js';
@@ -230,6 +231,48 @@ router.post('/admin/manual-unlock', requireAuth, requireRole('admin', 'super_adm
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to grant round override: ' + error.message });
+  }
+});
+
+/**
+ * @route   POST /api/v1/leaderboard/admin/manual-revoke
+ * @desc    Admin exception override to lock/revoke a round for a specific team
+ * @access  Admin Only
+ */
+router.post('/admin/manual-revoke', requireAuth, requireRole('admin', 'super_admin'), async (req, res) => {
+  try {
+    const { teamId, roundNumber, reason } = req.body;
+    if (!teamId || !roundNumber) {
+      return res.status(400).json({ success: false, message: 'teamId and roundNumber are required.' });
+    }
+
+    const team = await findTeamById(teamId);
+    if (!team) {
+      return res.status(404).json({ success: false, message: 'Team not found.' });
+    }
+
+    const updatedTeam = await revokeManualRoundUnlock(teamId, parseInt(roundNumber), reason, req.user);
+
+    await logAdminAudit(
+      req.user,
+      'MANUAL_ROUND_REVOKE_OVERRIDE',
+      'Team',
+      team._id,
+      team.name,
+      { roundNumber: parseInt(roundNumber), unlocked: true },
+      { roundNumber: parseInt(roundNumber), unlocked: false, reason },
+      req
+    );
+
+    notifyAdminLiveStateUpdate();
+
+    return res.status(200).json({
+      success: true,
+      message: `Round ${roundNumber} access revoked for Team '${team.name}'. Access locked.`,
+      team: updatedTeam,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to revoke round override: ' + error.message });
   }
 });
 

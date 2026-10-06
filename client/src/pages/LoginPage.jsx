@@ -13,15 +13,17 @@ export function LoginPage() {
   const from = location.state?.from?.pathname;
 
   // Handle immediate redirect if user is already authenticated
-  if (user) {
-    if (user.role === 'admin' || user.role === 'super_admin') {
-      navigate('/admin', { replace: true });
-    } else if (!user.isProfileComplete) {
-      navigate('/onboarding', { replace: true });
-    } else {
-      navigate(from || '/dashboard', { replace: true });
+  React.useEffect(() => {
+    if (user) {
+      if (user.role === 'admin' || user.role === 'super_admin') {
+        navigate('/admin', { replace: true });
+      } else if (!user.isProfileComplete) {
+        navigate('/onboarding', { replace: true });
+      } else {
+        navigate(from || '/dashboard', { replace: true });
+      }
     }
-  }
+  }, [user, navigate, from]);
 
   const handleGoogleLogin = async () => {
     try {

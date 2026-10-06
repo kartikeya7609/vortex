@@ -14,8 +14,10 @@ import round1GameRoutes from './routes/round1GameRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
 import helpRoutes from './routes/helpRoutes.js';
+import detectiveRoutes from './routes/detectiveRoutes.js';
 import { getJwtSecret } from './config/jwt.js';
 import { expireDueRound1Sessions, unpublishMalformedRoundOnePuzzles } from './services/store.js';
+import { seedDefaultDetectiveCaseIfNeeded } from './services/detectiveService.js';
 
 // Environment configuration is loaded before modules that initialize external clients.
 
@@ -66,6 +68,7 @@ app.use('/api/v1/game/r1', round1GameRoutes);
 app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/leaderboard', leaderboardRoutes);
 app.use('/api/v1/help', helpRoutes);
+app.use('/api/v1/detective', detectiveRoutes);
 
 // Global 404 Route Handler
 app.use((req, res) => {
@@ -94,6 +97,7 @@ initSocket(httpServer, allowedOrigins);
 connectDB().then(async () => {
   await unpublishMalformedRoundOnePuzzles();
   await expireDueRound1Sessions();
+  await seedDefaultDetectiveCaseIfNeeded();
   setInterval(async () => {
     try {
       const expiredCount = await expireDueRound1Sessions();

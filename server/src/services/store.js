@@ -52,7 +52,7 @@ let memoryStore = {
     {
       _id: 'mem_r1',
       roundNumber: 1,
-      title: 'Round 1: Avengers Tile Assemble',
+      title: 'Tile Puzzle',
       description: 'Sequential Image Puzzle challenge with dynamic grid slicing, piece tray drag/swap mechanics, and time-attack scoring.',
       mechanicType: 'SEQUENTIAL_PUZZLE',
       status: 'AVAILABLE',
@@ -62,31 +62,11 @@ let memoryStore = {
     {
       _id: 'mem_r2',
       roundNumber: 2,
-      title: 'Round 2: Quantum Mind Quiz',
-      description: 'Interactive speed quiz testing algorithmic logic, Marvel trivia, and real-time decision making.',
-      mechanicType: 'MCQ_QUIZ',
-      status: 'LOCKED',
-      durationSeconds: 1200,
-      minTeamSize: 2,
-    },
-    {
-      _id: 'mem_r3',
-      roundNumber: 3,
-      title: 'Round 3: Vibranium Media Showcase',
-      description: 'Creative project presentation and video/image asset submission for expert jury evaluation.',
-      mechanicType: 'MEDIA_SUBMISSION',
-      status: 'LOCKED',
-      durationSeconds: 3600,
-      minTeamSize: 2,
-    },
-    {
-      _id: 'mem_r4',
-      roundNumber: 4,
-      title: 'Round 4: Infinity Speed Run',
-      description: 'Grand final speed programming and multi-tile puzzle showdown for top qualified teams.',
-      mechanicType: 'CODE_CHALLENGE',
-      status: 'LOCKED',
-      durationSeconds: 2400,
+      title: 'Mystery Solver',
+      description: 'Investigate crime scene evidence, CCTV logs, suspect statements, and decode encrypted clues to solve the mystery.',
+      mechanicType: 'DETECTIVE_CASE',
+      status: 'AVAILABLE',
+      durationSeconds: 1800,
       minTeamSize: 2,
     },
   ],
@@ -361,6 +341,46 @@ export const updateUserRole = async (userId, newRole) => {
   return user;
 };
 
+export const toggleUserAccessBlock = async (userId, isBlocked, reason = '') => {
+  const user = await findUserById(userId);
+  if (!user) return null;
+
+  user.isAccessBlocked = Boolean(isBlocked);
+  user.blockReason = reason ? String(reason).trim() : '';
+
+  if (isDbConnected() && typeof user.save === 'function') {
+    try {
+      await user.save();
+      return user;
+    } catch (e) {
+      console.error('[Store] Failed to toggle user access block:', e.message);
+    }
+  }
+
+  saveDiskBackup();
+  return user;
+};
+
+export const toggleTeamDisqualification = async (teamId, isDisqualified, reason = '') => {
+  const team = await findTeamById(teamId);
+  if (!team) return null;
+
+  team.isDisqualified = Boolean(isDisqualified);
+  team.disqualificationReason = reason ? String(reason).trim() : '';
+
+  if (isDbConnected() && typeof team.save === 'function') {
+    try {
+      await team.save();
+      return team;
+    } catch (e) {
+      console.error('[Store] Failed to toggle team disqualification:', e.message);
+    }
+  }
+
+  saveDiskBackup();
+  return team;
+};
+
 export const getAllUsers = async () => {
   if (isDbConnected()) {
     try { return await User.find().select('-__v').sort({ createdAt: -1 }); } catch {}
@@ -585,13 +605,29 @@ export const getAllTeams = async () => {
 export const getAllRounds = async () => {
   if (isDbConnected()) {
     try {
-      const count = await Round.countDocuments();
-      if (count > 0) {
-        return await Round.find().sort({ roundNumber: 1 });
-      }
+      // Clean any legacy rounds > 2
+      await Round.deleteMany({ roundNumber: { $gt: 2 } });
+
+      // Update or seed Round 1 with title "Tile Puzzle"
+      await Round.findOneAndUpdate(
+        { roundNumber: 1 },
+        { title: 'Tile Puzzle', mechanicType: 'SEQUENTIAL_PUZZLE' },
+        { upsert: true, new: true }
+      );
+
+      // Update or seed Round 2 with title "Mystery Solver"
+      await Round.findOneAndUpdate(
+        { roundNumber: 2 },
+        { title: 'Mystery Solver', mechanicType: 'DETECTIVE_CASE' },
+        { upsert: true, new: true }
+      );
+
+      const dbRounds = await Round.find({ roundNumber: { $lte: 2 } }).sort({ roundNumber: 1 });
+      if (dbRounds && dbRounds.length > 0) return dbRounds;
     } catch {}
   }
-  return memoryStore.rounds;
+
+  return memoryStore.rounds.filter((r) => r.roundNumber <= 2);
 };
 
 export const getRoundByNumber = async (roundNumber) => {
@@ -1347,12 +1383,13 @@ const submitTeamGameAttemptImpl = async (teamId, userObj, submittedAnswer, timeS
       if (!team.qualifications) team.qualifications = [];
       let qual = team.qualifications.find((q) => q.roundNumber === parseInt(roundNumber));
       if (!qual) {
-        qual = { roundNumber: parseInt(roundNumber), status: 'QUALIFIED', score: session.score };
+        qual = { roundNumber: parseInt(roundNumber), status: 'COMPLETED', score: session.score, puzzlesCompleted: activePuzzles.length, completedAt: new Date() };
         team.qualifications.push(qual);
       } else {
-        qual.status = 'QUALIFIED';
+        qual.status = qual.status === 'QUALIFIED' ? 'QUALIFIED' : 'COMPLETED';
         qual.score = session.score;
-        qual.qualifiedAt = new Date();
+        qual.puzzlesCompleted = activePuzzles.length;
+        qual.completedAt = new Date();
       }
     } else {
       session.currentPuzzleId = String(activePuzzles[session.currentPuzzleIndex]._id);
@@ -1433,8 +1470,16 @@ export const adjustTeamScore = async (teamId, roundNumber, scoreDelta, reason) =
 export const getLeaderboardStatus = async () => {
   if (isDbConnected()) {
     try {
-      const setting = await LeaderboardSetting.findOne();
-      if (setting) return setting;
+      let setting = await LeaderboardSetting.findOne();
+      if (!setting) {
+        setting = await LeaderboardSetting.create({
+          isFrozen: false,
+          isPublished: true,
+          frozenAt: null,
+          publishedAt: new Date(),
+        });
+      }
+      return setting;
     } catch {}
   }
   if (!memoryStore.leaderboardSetting) {
@@ -1453,17 +1498,18 @@ export const setLeaderboardFreeze = async (isFrozen, adminEmail = 'admin') => {
     lastUpdatedBy: adminEmail,
   };
 
-  if (isDbConnected() && typeof setting.save === 'function') {
+  if (isDbConnected()) {
     try {
-      Object.assign(setting, updatedData);
-      await setting.save();
-      return { setting, previousState, newState: updatedData };
+      const updated = await LeaderboardSetting.findOneAndUpdate({}, updatedData, { upsert: true, new: true });
+      if (updated) setting = updated;
     } catch {}
   }
 
-  Object.assign(memoryStore.leaderboardSetting, updatedData);
-  saveDiskBackup();
-  return { setting: memoryStore.leaderboardSetting, previousState, newState: updatedData };
+  if (memoryStore.leaderboardSetting) {
+    Object.assign(memoryStore.leaderboardSetting, updatedData);
+    saveDiskBackup();
+  }
+  return { setting, previousState, newState: updatedData };
 };
 
 export const setLeaderboardPublish = async (isPublished, adminEmail = 'admin') => {
@@ -1476,17 +1522,18 @@ export const setLeaderboardPublish = async (isPublished, adminEmail = 'admin') =
     lastUpdatedBy: adminEmail,
   };
 
-  if (isDbConnected() && typeof setting.save === 'function') {
+  if (isDbConnected()) {
     try {
-      Object.assign(setting, updatedData);
-      await setting.save();
-      return { setting, previousState, newState: updatedData };
+      const updated = await LeaderboardSetting.findOneAndUpdate({}, updatedData, { upsert: true, new: true });
+      if (updated) setting = updated;
     } catch {}
   }
 
-  Object.assign(memoryStore.leaderboardSetting, updatedData);
-  saveDiskBackup();
-  return { setting: memoryStore.leaderboardSetting, previousState, newState: updatedData };
+  if (memoryStore.leaderboardSetting) {
+    Object.assign(memoryStore.leaderboardSetting, updatedData);
+    saveDiskBackup();
+  }
+  return { setting, previousState, newState: updatedData };
 };
 
 // ==================== AUDIT LOG OPERATIONS ====================

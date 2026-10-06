@@ -102,6 +102,15 @@ const userSchema = new mongoose.Schema(
         default: 'REGISTERED',
       },
     },
+    // Access Control & Moderation
+    isAccessBlocked: {
+      type: Boolean,
+      default: false,
+    },
+    blockReason: {
+      type: String,
+      default: '',
+    },
   },
   {
     timestamps: true,

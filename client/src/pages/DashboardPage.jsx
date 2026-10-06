@@ -97,6 +97,7 @@ export function DashboardPage() {
       }
 
       if (roundNumber === 1) navigate('/game');
+      if (roundNumber === 2) navigate('/detective');
     } catch (err) {
       setAccessDeniedModal({
         title: 'Connection Error',
@@ -224,10 +225,8 @@ export function DashboardPage() {
         ) : (
           <div className="ieee-round-grid">
             {roundsData.map((r, index) => {
-              const isLocked = r.status === 'Locked' || r.status === 'LOCKED';
-              const isAvailable =
-                (r.status === 'Available' || r.status === 'AVAILABLE' ||
-                  r.status === 'OPEN' || r.isAccessible) && !isLocked;
+              const isAvailable = Boolean(r.isAccessible || r.status === 'Available' || r.status === 'AVAILABLE' || r.status === 'In Progress');
+              const isLocked = !isAvailable;
               const roundNumStr = String(r.roundNumber || index + 1).padStart(2, '0');
 
               return (
@@ -238,19 +237,19 @@ export function DashboardPage() {
                   <div className="ieee-round-top">
                     <span className="ieee-round-number">{roundNumStr}</span>
                     {isAvailable
-                      ? <span className="ieee-status ieee-open-status">OPEN</span>
-                      : <span className="ieee-status"><Lock className="w-3 h-3 inline mr-1" />LOCKED</span>
+                      ? <span className="ieee-status ieee-open-status">AVAILABLE / UNLOCKED</span>
+                      : <span className="ieee-status"><Lock className="w-3 h-3 inline mr-1" />🔒 LOCKED</span>
                     }
                   </div>
                   <h3>{r.title}</h3>
                   <p>{r.description}</p>
                   <div className="ieee-round-meta">
-                    <span>TYPE</span>
-                    <strong>{r.mechanicType || 'SEQUENTIAL_PUZZLE'}</strong>
+                    <span>MECHANIC</span>
+                    <strong>{r.mechanicType || (r.roundNumber === 2 ? 'DETECTIVE_CASE' : 'SEQUENTIAL_PUZZLE')}</strong>
                   </div>
                   <div className="ieee-round-bottom">
                     <span>⏱ {Math.floor((r.durationSeconds || 1800) / 60)}M LIMIT</span>
-                    {isAvailable && (
+                    {isAvailable ? (
                       <button
                         onClick={() => handleEnterRound(r.roundNumber)}
                         disabled={enteringRound === r.roundNumber}
@@ -258,8 +257,12 @@ export function DashboardPage() {
                       >
                         {enteringRound === r.roundNumber
                           ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : 'Enter →'}
+                          : r.roundNumber === 2 ? 'Start Detective Case →' : 'Enter Round →'}
                       </button>
+                    ) : (
+                      <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
+                        {r.roundNumber === 2 ? 'Requires Admin Unlock or Round 1 Qualification' : 'Locked by Admin'}
+                      </span>
                     )}
                   </div>
                 </article>

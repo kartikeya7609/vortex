@@ -13,6 +13,7 @@ import { RoundsPage }         from './pages/RoundsPage';
 import { LeaderboardPage }    from './pages/LeaderboardPage';
 import { HelpPage }           from './pages/HelpPage';
 import { PuzzleGamePage }     from './pages/PuzzleGamePage';
+import { DetectiveGamePage }  from './pages/DetectiveGamePage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 
 export function App() {
@@ -41,6 +42,7 @@ export function App() {
           <Route path="/leaderboard"   element={<ProtectedRoute requireProfile={true}><LeaderboardPage /></ProtectedRoute>} />
           <Route path="/help"          element={<ProtectedRoute requireProfile={true}><HelpPage /></ProtectedRoute>} />
           <Route path="/game"          element={<ProtectedRoute requireProfile={true}><PuzzleGamePage /></ProtectedRoute>} />
+          <Route path="/detective"     element={<ProtectedRoute requireProfile={true}><DetectiveGamePage /></ProtectedRoute>} />
 
           {/* ── Admin protected panel ── */}
           <Route

@@ -52,6 +52,7 @@ export function RoundsPage() {
         return;
       }
       if (roundNumber === 1) navigate('/game');
+      if (roundNumber === 2) navigate('/detective');
     } catch (err) {
       setAccessDeniedModal({ title: 'Connection Error', message: err.message });
     } finally {
@@ -90,11 +91,8 @@ export function RoundsPage() {
       ) : (
         <div className="rounds-full-grid">
           {rounds.map((r, index) => {
-            const statusKey = (r.status || 'LOCKED').toUpperCase().replace(' ', '_');
-            const isLocked = statusKey === 'LOCKED';
-            const isAvailable =
-              (statusKey === 'OPEN' || statusKey === 'AVAILABLE' || r.isAccessible) && !isLocked;
-            const { label, cls } = STATUS_STYLES[statusKey] || { label: r.status, cls: '' };
+            const isAvailable = Boolean(r.isAccessible || r.status === 'Available' || r.status === 'AVAILABLE' || r.status === 'In Progress');
+            const isLocked = !isAvailable;
             const roundNumStr = String(r.roundNumber || index + 1).padStart(2, '0');
             const mins = Math.floor((r.durationSeconds || 1800) / 60);
 
@@ -109,11 +107,8 @@ export function RoundsPage() {
                 <div className="rounds-card-body">
                   <div className="rounds-card-top">
                     <div className="rounds-num-badge">{roundNumStr}</div>
-                    <span className={`ieee-status ${cls}`}>
-                      {!isAvailable && !['IN_PROGRESS','COMPLETED','ELIMINATED'].includes(statusKey) && (
-                        <Lock className="w-3 h-3 inline mr-1" />
-                      )}
-                      {label}
+                    <span className={`ieee-status ${isAvailable ? 'ieee-open-status' : ''}`}>
+                      {isAvailable ? 'AVAILABLE / UNLOCKED' : <><Lock className="w-3 h-3 inline mr-1" />🔒 LOCKED</>}
                     </span>
                   </div>
 
@@ -122,7 +117,7 @@ export function RoundsPage() {
 
                   <div className="rounds-card-meta">
                     <span className="ieee-round-meta">
-                      TYPE <strong>{r.mechanicType || 'SEQUENTIAL_PUZZLE'}</strong>
+                      MECHANIC <strong>{r.mechanicType || (r.roundNumber === 2 ? 'DETECTIVE_CASE' : 'SEQUENTIAL_PUZZLE')}</strong>
                     </span>
                     <span className="rounds-time">
                       <Clock className="w-3.5 h-3.5" /> {mins}m limit
@@ -147,13 +142,13 @@ export function RoundsPage() {
                       >
                         {enteringRound === r.roundNumber
                           ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Entering…</>
-                          : '▶ Enter Round'}
+                          : r.roundNumber === 2 ? '▶ Start Detective Case' : '▶ Enter Round'}
                       </button>
                     ) : (
                       <div className="rounds-locked-msg">
-                        {isLocked
-                          ? '🔒 This round is currently locked by administrators.'
-                          : `Status: ${label}`}
+                        {r.roundNumber === 2
+                          ? '🔒 Locked - Requires Admin Unlock or Round 1 Qualification'
+                          : '🔒 This round is currently locked by administrators.'}
                       </div>
                     )}
                   </div>

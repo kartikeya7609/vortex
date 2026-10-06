@@ -18,7 +18,7 @@ const adminAuditLogSchema = new mongoose.Schema(
     },
     targetType: {
       type: String,
-      enum: ['Team', 'User', 'Round', 'Puzzle', 'Leaderboard', 'System'],
+      enum: ['Team', 'User', 'Round', 'Puzzle', 'Leaderboard', 'System', 'AdminWhitelist', 'FAQ', 'DetectiveCase'],
       required: true,
     },
     targetId: {

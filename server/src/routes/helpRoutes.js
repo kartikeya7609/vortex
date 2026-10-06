@@ -11,7 +11,13 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const faqs = await getAllFAQs();
-    return res.status(200).json({ success: true, count: faqs.length, faqs });
+    return res.status(200).json({
+      success: true,
+      status: 'success',
+      count: faqs.length,
+      faqs,
+      data: { faqs },
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to fetch FAQs: ' + error.message });
   }
