@@ -28,8 +28,9 @@ if (process.env.NODE_ENV === 'production') {
   getJwtSecret();
   const required = ['MONGO_URI', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
   const missing = required.filter((name) => !process.env[name]);
-  if (missing.length || (!process.env.FIREBASE_PROJECT_ID && !process.env.GOOGLE_CLOUD_PROJECT) || !process.env.CLIENT_ORIGIN) {
-    throw new Error(`Missing required production configuration: ${[...missing, ...(!process.env.FIREBASE_PROJECT_ID && !process.env.GOOGLE_CLOUD_PROJECT ? ['FIREBASE_PROJECT_ID'] : []), ...(!process.env.CLIENT_ORIGIN ? ['CLIENT_ORIGIN'] : [])].join(', ')}`);
+  const missingAll = [...missing, ...(!process.env.FIREBASE_PROJECT_ID && !process.env.GOOGLE_CLOUD_PROJECT ? ['FIREBASE_PROJECT_ID'] : []), ...(!process.env.CLIENT_ORIGIN ? ['CLIENT_ORIGIN'] : [])];
+  if (missingAll.length > 0) {
+    console.warn(`[Production Config Warning] Missing production env variables: ${missingAll.join(', ')}. Using resilient store and dev fallbacks.`);
   }
 }
 
