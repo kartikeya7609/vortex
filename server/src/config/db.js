@@ -25,7 +25,6 @@ export const connectDB = async () => {
   } catch (error) {
     global.isMongoConnected = false;
     console.warn(`[MongoDB Atlas Warning]: ${error.message}`);
-    if (process.env.NODE_ENV === 'production') throw error;
-    console.log('[Aarohan Engine] Running in Resilient Data Store Mode (Zero-Interruption Local Execution).');
+    console.log('[VORTEX Engine] Running in Resilient Data Store Mode.');
   }
 };
