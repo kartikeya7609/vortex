@@ -31,6 +31,14 @@ export const requireAuth = async (req, res, next) => {
       });
     }
 
+    if (user.isAccessBlocked && user.role !== 'admin' && user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCESS_REVOKED',
+        message: `Access revoked: ${user.blockReason || 'An administrator has revoked access for your account.'}`,
+      });
+    }
+
     // Attach user instance to request
     req.user = user;
     next();

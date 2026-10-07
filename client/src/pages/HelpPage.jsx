@@ -109,8 +109,9 @@ export function HelpPage() {
     try {
       const res = await apiFetch(`${API_BASE_URL}/help`);
       const data = await res.json();
-      if (data.status === 'success' && data.data?.faqs?.length) {
-        setFaqs(data.data.faqs);
+      const list = Array.isArray(data.faqs) && data.faqs.length ? data.faqs : data.data?.faqs;
+      if (list && list.length) {
+        setFaqs(list);
       } else {
         setFaqs(FALLBACK_FAQS);
       }
@@ -186,9 +187,9 @@ export function HelpPage() {
         </div>
 
         <div className="faq-list">
-          {faqs.map((item) => (
+          {faqs.map((item, index) => (
             <FaqItem
-              key={item.id}
+              key={item._id || item.id || `faq-${index}`}
               question={item.question || item.q}
               answer={item.answer || item.a}
               category={item.category}

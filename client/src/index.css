@@ -1423,6 +1423,12 @@ body {
         -webkit-overflow-scrolling: touch;
         gap: 12px;
     }
+    .ieee-content {
+        padding: 16px 10px;
+    }
+    .ieee-topbar {
+        padding: 0 16px;
+    }
 }
 
 /* =========================================================

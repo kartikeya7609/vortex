@@ -106,6 +106,16 @@ export const verifyRoundEligibility = async (teamId, roundNumber) => {
     return { isEligible: true, team, roundNumber: 1 };
   }
 
+  // Check if access to this specific round was explicitly revoked by an administrator
+  const currentRoundQual = team.qualifications?.find((q) => q.roundNumber === roundNum);
+  if (currentRoundQual && currentRoundQual.status === 'ELIMINATED') {
+    return {
+      isEligible: false,
+      code: 'ACCESS_REVOKED',
+      reason: `Round ${roundNum} access has been revoked by administrators: ${currentRoundQual.overrideReason || 'Administrative revocation'}.`,
+    };
+  }
+
   // Check manual round unlock override
   const hasManualUnlock = team.manualRoundUnlocks?.some((u) => u.roundNumber === roundNum);
   if (hasManualUnlock) {
@@ -120,8 +130,8 @@ export const verifyRoundEligibility = async (teamId, roundNumber) => {
   if (!prevRoundQual) {
     return {
       isEligible: false,
-      code: 'NOT_QUALIFIED',
-      reason: `Team '${team.name}' has not qualified from Round ${roundNum - 1} to participate in Round ${roundNum}.`,
+      code: 'ROUND_LOCKED',
+      reason: `Round ${roundNum} is locked. Await administrator access grant to unlock.`,
     };
   }
 

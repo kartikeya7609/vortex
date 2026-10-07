@@ -8,7 +8,7 @@ import {
   Lock, Unlock, Play, CheckCircle2, Award, SlidersHorizontal, Clock, AlertCircle, Grid,
   Radio, Flame, UserCheck, CheckCheck, HelpCircle, Mail, FileText, UserPlus, Download,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight, RotateCcw, Eye, EyeOff, Trophy,
-  WifiOff, Wifi, Info,
+  WifiOff, Wifi, Info, Lightbulb,
 } from 'lucide-react';
 
 /* ============================================================================
@@ -318,6 +318,53 @@ export function AdminDashboardPage() {
   const [rankingPreview, setRankingPreview] = useState(null);
   const [loadingRankingPreview, setLoadingRankingPreview] = useState(false);
   const [manualUnlockModal, setManualUnlockModal] = useState(null);
+  const [roundsSubTab, setRoundsSubTab] = useState('overview'); // 'overview' | 'detective' | 'unlocks'
+
+  // Detective Case State
+  const [detCases, setDetCases] = useState([]);
+  const [detAttempts, setDetAttempts] = useState([]);
+  const [selectedCaseId, setSelectedCaseId] = useState(null);
+  const [detClues, setDetClues] = useState([]);
+  const [detQuestions, setDetQuestions] = useState([]);
+  const [detHints, setDetHints] = useState([]);
+  const [detSubTab, setDetSubTab] = useState('cases');
+
+  // Detective Modals
+  const [isDetCaseModalOpen, setIsDetCaseModalOpen] = useState(false);
+  const [editingDetCase, setEditingDetCase] = useState(null);
+  const [detCaseForm, setDetCaseForm] = useState({ title: '', description: '', difficulty: 'Detective', timeLimitSeconds: 1800, maximumScore: 500, status: 'DRAFT' });
+
+  const [isDetClueModalOpen, setIsDetClueModalOpen] = useState(false);
+  const [editingDetClue, setEditingDetClue] = useState(null);
+  const [detClueForm, setDetClueForm] = useState({ order: 1, title: '', description: '', evidence: '', evidenceType: 'text' });
+
+  const [isDetQuestionModalOpen, setIsDetQuestionModalOpen] = useState(false);
+  const [editingDetQuestion, setEditingDetQuestion] = useState(null);
+  const [detQuestionForm, setDetQuestionForm] = useState({ order: 1, question: '', optionA: '', optionB: '', optionC: '', optionD: '', correctAnswerIndex: 0, points: 100 });
+
+  const [isDetHintModalOpen, setIsDetHintModalOpen] = useState(false);
+  const [editingDetHint, setEditingDetHint] = useState(null);
+  const [detHintForm, setDetHintForm] = useState({ order: 1, hintText: '', penalty: 20, enabled: true });
+
+  const fetchCaseSubDetails = useCallback(async (cId) => {
+    if (!cId) return;
+    try {
+      const [cRes, qRes, hRes] = await Promise.all([
+        request(`/detective/admin/cases/${cId}/clues`),
+        request(`/detective/admin/cases/${cId}/questions`),
+        request(`/detective/admin/cases/${cId}/hints`),
+      ]);
+      setDetClues(cRes.clues || []);
+      setDetQuestions(qRes.questions || []);
+      setDetHints(hRes.hints || []);
+    } catch (err) {
+      console.warn('Failed to load detective sub details:', err.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedCaseId) fetchCaseSubDetails(selectedCaseId);
+  }, [selectedCaseId, fetchCaseSubDetails]);
 
   /* ----------------------------- feedback ----------------------------- */
 
@@ -358,6 +405,8 @@ export function AdminDashboardPage() {
       ['audit', '/admin/mgmt/audit-logs'],
       ['whitelist', '/admin/mgmt/whitelist'],
       ['faqs', '/help'],
+      ['detCases', '/detective/admin/cases'],
+      ['detAttempts', '/detective/admin/attempts'],
     ];
     const results = await Promise.allSettled(endpoints.map(([, p]) => request(p)));
     if (reqId !== reqCounter.current) return; // a newer request superseded this one
@@ -377,6 +426,15 @@ export function AdminDashboardPage() {
         case 'audit': setAuditLogs(d.logs || []); break;
         case 'whitelist': setWhitelistEmails(d.emails || []); break;
         case 'faqs': setFaqsList(d.data?.faqs || []); break;
+        case 'detCases':
+          setDetCases(d.cases || []);
+          if (d.cases?.length && !selectedCaseId) {
+            const firstId = d.cases[0]._id || d.cases[0].id;
+            setSelectedCaseId(firstId);
+            fetchCaseSubDetails(firstId);
+          }
+          break;
+        case 'detAttempts': setDetAttempts(d.attempts || []); break;
         default: break;
       }
     });
@@ -547,6 +605,34 @@ export function AdminDashboardPage() {
       `Updated team "${teamForm.name.trim()}"`,
     );
     if (ok) setEditingTeam(null);
+  };
+
+  const handleToggleUserAccess = (u) => {
+    const nextBlocked = !u.isAccessBlocked;
+    askConfirm({
+      title: nextBlocked ? 'Block participant access' : 'Restore participant access',
+      message: `${nextBlocked ? 'Block' : 'Restore'} access for ${u.name || u.email}? ${nextBlocked ? 'They will not be able to participate in any event rounds.' : 'They will regain access.'}`,
+      confirmLabel: nextBlocked ? 'Block access' : 'Restore access',
+      danger: nextBlocked,
+      onConfirm: () => mutate(
+        () => request(`/admin/teams-mgmt/users/${u._id}/toggle-access`, send('POST', { isBlocked: nextBlocked, reason: nextBlocked ? 'Blocked by admin' : 'Restored by admin' })),
+        `${nextBlocked ? 'Blocked' : 'Restored'} access for ${u.name || u.email}`
+      ),
+    });
+  };
+
+  const handleToggleTeamDisqualification = (t) => {
+    const nextDisqualified = !t.isDisqualified;
+    askConfirm({
+      title: nextDisqualified ? 'Disqualify team' : 'Restore team',
+      message: `${nextDisqualified ? 'Disqualify' : 'Restore'} team "${t.name}"? ${nextDisqualified ? 'All team members will be blocked from playing event rounds.' : 'The team will be re-activated.'}`,
+      confirmLabel: nextDisqualified ? 'Disqualify team' : 'Restore team',
+      danger: nextDisqualified,
+      onConfirm: () => mutate(
+        () => request(`/admin/teams-mgmt/teams/${t._id}/disqualify`, send('POST', { isDisqualified: nextDisqualified, reason: nextDisqualified ? 'Disqualified by admin' : 'Restored by admin' })),
+        `Team "${t.name}" ${nextDisqualified ? 'disqualified' : 'restored'}`
+      ),
+    });
   };
 
   const handleResetTeamSession = (teamId, teamName) => askConfirm({
@@ -935,6 +1021,20 @@ export function AdminDashboardPage() {
     if (ok) setManualUnlockModal(null);
   };
 
+  const handleManualRevoke = async (teamId, teamName) => {
+    askConfirm({
+      title: `Lock Round 2 for ${teamName}`,
+      message: `Revoke Round 2 access for team "${teamName}"? Round 2 will become LOCKED for this team.`,
+      confirmLabel: 'Lock / Revoke Access',
+      danger: true,
+      onConfirm: async () => {
+        await mutate(() => request('/leaderboard/admin/manual-revoke', send('POST', {
+          teamId, roundNumber: 2, reason: 'Admin revoked Round 2 access',
+        })), `Round 2 locked for ${teamName}`);
+      },
+    });
+  };
+
   const moveTieBreak = (i, dir) => {
     const j = i + dir;
     if (j < 0 || j >= tieBreakOrder.length) return;
@@ -943,6 +1043,173 @@ export function AdminDashboardPage() {
     setTieBreakOrder(next);
     setRankingPreview(null);
   };
+
+  /* ----------------------------- detective handlers ----------------------------- */
+
+  const openCreateDetCase = () => {
+    setEditingDetCase(null);
+    setDetCaseForm({ title: '', description: '', difficulty: 'Detective', timeLimitSeconds: 1800, maximumScore: 500, status: 'DRAFT' });
+    setIsDetCaseModalOpen(true);
+  };
+
+  const openEditDetCase = (c) => {
+    setEditingDetCase(c);
+    setDetCaseForm({ title: c.title || '', description: c.description || '', difficulty: c.difficulty || 'Detective', timeLimitSeconds: c.timeLimitSeconds || 1800, maximumScore: c.maximumScore || 500, status: c.status || 'DRAFT' });
+    setIsDetCaseModalOpen(true);
+  };
+
+  const handleSaveDetCase = async (e) => {
+    e.preventDefault();
+    if (!detCaseForm.title.trim()) return notify('Enter case title.', 'error');
+    const path = editingDetCase ? `/detective/admin/cases/${editingDetCase._id || editingDetCase.id}` : '/detective/admin/cases';
+    const method = editingDetCase ? 'PUT' : 'POST';
+    const ok = await mutate(() => request(path, send(method, detCaseForm)), editingDetCase ? 'Case updated' : 'Case created');
+    if (ok) setIsDetCaseModalOpen(false);
+  };
+
+  const handleTogglePublishDetCase = async (c) => {
+    const nextStatus = c.status === 'PUBLISHED' ? 'UNPUBLISHED' : 'PUBLISHED';
+    const ok = await mutate(() => request(`/detective/admin/cases/${c._id || c.id}/publish`, send('POST', { status: nextStatus })), `Case is now ${nextStatus}`);
+    if (ok) fetchAllAdminData(true);
+  };
+
+  const handleDeleteDetCase = (c) => askConfirm({
+    title: 'Delete Detective Case',
+    message: `Delete "${c.title}" and all its clues, questions, hints and attempts?`,
+    confirmLabel: 'Delete Case',
+    danger: true,
+    onConfirm: () => mutate(() => request(`/detective/admin/cases/${c._id || c.id}`, send('DELETE')), 'Case deleted'),
+  });
+
+  const openCreateDetClue = () => {
+    setEditingDetClue(null);
+    setDetClueForm({ order: detClues.length + 1, title: '', description: '', evidence: '', evidenceType: 'text', classification: 'supporting' });
+    setIsDetClueModalOpen(true);
+  };
+
+  const openEditDetClue = (clue) => {
+    setEditingDetClue(clue);
+    setDetClueForm({ order: clue.order || 1, title: clue.title || '', description: clue.description || '', evidence: clue.evidence || '', evidenceType: clue.evidenceType || 'text', classification: clue.classification || 'supporting' });
+    setIsDetClueModalOpen(true);
+  };
+
+  const handleSaveDetClue = async (e) => {
+    e.preventDefault();
+    if (!selectedCaseId) return notify('Select a case first.', 'error');
+    if (!detClueForm.title.trim()) return notify('Enter clue title.', 'error');
+    const path = editingDetClue ? `/detective/admin/clues/${editingDetClue._id || editingDetClue.id}` : `/detective/admin/cases/${selectedCaseId}/clues`;
+    const method = editingDetClue ? 'PUT' : 'POST';
+    const ok = await mutate(() => request(path, send(method, detClueForm)), editingDetClue ? 'Clue updated' : 'Clue added');
+    if (ok) {
+      setIsDetClueModalOpen(false);
+      fetchCaseSubDetails(selectedCaseId);
+    }
+  };
+
+  const handleDeleteDetClue = (clue) => askConfirm({
+    title: 'Delete Clue',
+    message: `Delete "${clue.title}"?`,
+    confirmLabel: 'Delete Clue',
+    danger: true,
+    onConfirm: async () => {
+      const ok = await mutate(() => request(`/detective/admin/clues/${clue._id || clue.id}`, send('DELETE')), 'Clue deleted');
+      if (ok) fetchCaseSubDetails(selectedCaseId);
+    },
+  });
+
+  const openCreateDetQuestion = () => {
+    setEditingDetQuestion(null);
+    setDetQuestionForm({ order: detQuestions.length + 1, question: '', optionA: '', optionB: '', optionC: '', optionD: '', correctAnswerIndex: 0, points: 100 });
+    setIsDetQuestionModalOpen(true);
+  };
+
+  const openEditDetQuestion = (q) => {
+    setEditingDetQuestion(q);
+    const opts = q.options || [];
+    setDetQuestionForm({
+      order: q.order || 1,
+      question: q.question || '',
+      optionA: opts[0] || '',
+      optionB: opts[1] || '',
+      optionC: opts[2] || '',
+      optionD: opts[3] || '',
+      correctAnswerIndex: q.correctAnswerIndex ?? 0,
+      points: q.points || 100,
+    });
+    setIsDetQuestionModalOpen(true);
+  };
+
+  const handleSaveDetQuestion = async (e) => {
+    e.preventDefault();
+    if (!selectedCaseId) return notify('Select a case first.', 'error');
+    if (!detQuestionForm.question.trim()) return notify('Enter question text.', 'error');
+    const options = [detQuestionForm.optionA, detQuestionForm.optionB, detQuestionForm.optionC, detQuestionForm.optionD].filter((x) => String(x).trim());
+    if (options.length < 2) return notify('Enter at least 2 options.', 'error');
+
+    const body = {
+      order: Number(detQuestionForm.order) || 1,
+      question: detQuestionForm.question.trim(),
+      options,
+      correctAnswerIndex: Number(detQuestionForm.correctAnswerIndex) || 0,
+      points: Number(detQuestionForm.points) || 100,
+    };
+
+    const path = editingDetQuestion ? `/detective/admin/questions/${editingDetQuestion._id || editingDetQuestion.id}` : `/detective/admin/cases/${selectedCaseId}/questions`;
+    const method = editingDetQuestion ? 'PUT' : 'POST';
+    const ok = await mutate(() => request(path, send(method, body)), editingDetQuestion ? 'Question updated' : 'Question added');
+    if (ok) {
+      setIsDetQuestionModalOpen(false);
+      fetchCaseSubDetails(selectedCaseId);
+    }
+  };
+
+  const handleDeleteDetQuestion = (q) => askConfirm({
+    title: 'Delete Question',
+    message: `Delete question "${q.question}"?`,
+    confirmLabel: 'Delete Question',
+    danger: true,
+    onConfirm: async () => {
+      const ok = await mutate(() => request(`/detective/admin/questions/${q._id || q.id}`, send('DELETE')), 'Question deleted');
+      if (ok) fetchCaseSubDetails(selectedCaseId);
+    },
+  });
+
+  const openCreateDetHint = () => {
+    setEditingDetHint(null);
+    setDetHintForm({ order: detHints.length + 1, hintText: '', penalty: 20, enabled: true });
+    setIsDetHintModalOpen(true);
+  };
+
+  const openEditDetHint = (h) => {
+    setEditingDetHint(h);
+    setDetHintForm({ order: h.order || 1, hintText: h.hintText || '', penalty: h.penalty || 20, enabled: h.enabled !== false });
+    setIsDetHintModalOpen(true);
+  };
+
+  const handleSaveDetHint = async (e) => {
+    e.preventDefault();
+    if (!selectedCaseId) return notify('Select a case first.', 'error');
+    if (!detHintForm.hintText.trim()) return notify('Enter hint text.', 'error');
+
+    const path = editingDetHint ? `/detective/admin/hints/${editingDetHint._id || editingDetHint.id}` : `/detective/admin/cases/${selectedCaseId}/hints`;
+    const method = editingDetHint ? 'PUT' : 'POST';
+    const ok = await mutate(() => request(path, send(method, detHintForm)), editingDetHint ? 'Hint updated' : 'Hint added');
+    if (ok) {
+      setIsDetHintModalOpen(false);
+      fetchCaseSubDetails(selectedCaseId);
+    }
+  };
+
+  const handleDeleteDetHint = (h) => askConfirm({
+    title: 'Delete Hint',
+    message: `Delete hint "${h.hintText}"?`,
+    confirmLabel: 'Delete Hint',
+    danger: true,
+    onConfirm: async () => {
+      const ok = await mutate(() => request(`/detective/admin/hints/${h._id || h.id}`, send('DELETE')), 'Hint deleted');
+      if (ok) fetchCaseSubDetails(selectedCaseId);
+    },
+  });
 
   /* ----------------------------- exports ----------------------------- */
 
@@ -986,8 +1253,209 @@ export function AdminDashboardPage() {
     audit: 'Search action, administrator or target',
     rounds: 'Search',
     whitelist: 'Search',
+    detective: 'Search cases or questions',
   }[activeTab] || 'Search';
   const showSearch = ['users', 'teams', 'puzzles', 'faqs', 'audit', 'scoring'].includes(activeTab);
+
+  /* ============================================================================
+     RENDER SECTIONS
+     ============================================================================ */
+
+  const activeCase = detCases.find((c) => String(c._id || c.id) === String(selectedCaseId)) || detCases[0];
+
+  const renderDetective = () => (
+    <section className="adm-panel">
+      <div className="adm-panel-head">
+        <div>
+          <h2>Round 2: Detective Case Management</h2>
+          <p>Create cases, clues, questions, hints, and monitor participant investigation progress.</p>
+        </div>
+        <button className="adm-btn primary" onClick={openCreateDetCase}><Plus size={15} /> Create Case</button>
+      </div>
+
+      {detCases.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: 12, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--mute)' }}>Active Case:</span>
+          <select className="adm-select sm" value={selectedCaseId || ''} onChange={(e) => { setSelectedCaseId(e.target.value); fetchCaseSubDetails(e.target.value); }}>
+            {detCases.map((c) => <option key={c._id || c.id} value={c._id || c.id}>{c.title} ({c.status})</option>)}
+          </select>
+          {activeCase && (
+            <>
+              <Badge tone={activeCase.status === 'PUBLISHED' ? 'green' : 'amber'}>{activeCase.status}</Badge>
+              <span style={{ fontSize: 12, color: 'var(--mute)' }}>Difficulty: <b>{activeCase.difficulty}</b> · Limit: <b>{Math.floor((activeCase.timeLimitSeconds || 1800) / 60)}m</b></span>
+              <button className={`adm-btn sm ${activeCase.status === 'PUBLISHED' ? 'warn' : 'success'}`} onClick={() => handleTogglePublishDetCase(activeCase)}>
+                {activeCase.status === 'PUBLISHED' ? 'Unpublish' : 'Publish Case'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Sub-navigation tabs */}
+      <div className="adm-segment" role="tablist">
+        <button className={detSubTab === 'cases' ? 'on' : ''} onClick={() => setDetSubTab('cases')}>All Cases ({detCases.length})</button>
+        <button className={detSubTab === 'clues' ? 'on' : ''} onClick={() => setDetSubTab('clues')}>Clues ({detClues.length})</button>
+        <button className={detSubTab === 'questions' ? 'on' : ''} onClick={() => setDetSubTab('questions')}>Questions ({detQuestions.length})</button>
+        <button className={detSubTab === 'hints' ? 'on' : ''} onClick={() => setDetSubTab('hints')}>Hints ({detHints.length})</button>
+        <button className={detSubTab === 'attempts' ? 'on' : ''} onClick={() => setDetSubTab('attempts')}>Participant Results ({detAttempts.length})</button>
+      </div>
+
+      {/* Cases View */}
+      {detSubTab === 'cases' && (
+        <div className="adm-table-wrap">
+          <table className="adm-table t-teams">
+            <thead><tr><th>Title</th><th>Difficulty</th><th>Time Limit</th><th>Max Score</th><th>Status</th><th /></tr></thead>
+            <tbody>
+              {detCases.map((c) => (
+                <tr key={c._id || c.id}>
+                  <td><strong>{c.title}</strong><small>{c.description}</small></td>
+                  <td><Badge tone="blue">{c.difficulty}</Badge></td>
+                  <td className="mono">{Math.floor((c.timeLimitSeconds || 1800) / 60)} min</td>
+                  <td className="num">{c.maximumScore || 500} pts</td>
+                  <td><Badge tone={c.status === 'PUBLISHED' ? 'green' : 'amber'}>{c.status}</Badge></td>
+                  <td className="right">
+                    <div className="adm-actions">
+                      <button className={`adm-btn sm ${c.status === 'PUBLISHED' ? 'warn' : 'success'}`} onClick={() => handleTogglePublishDetCase(c)}>
+                        {c.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}
+                      </button>
+                      <button className="adm-btn ghost sm" onClick={() => openEditDetCase(c)}><Edit3 size={13} /> Edit</button>
+                      <button className="adm-btn danger sm" onClick={() => handleDeleteDetCase(c)}><Trash2 size={13} /> Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Clues View */}
+      {detSubTab === 'clues' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+            <h3>Clues for {activeCase?.title || 'Selected Case'}</h3>
+            <button className="adm-btn primary sm" onClick={openCreateDetClue}><Plus size={14} /> Add Clue</button>
+          </div>
+          {detClues.length === 0 ? <Empty icon={FileText} title="No clues added yet" hint="Add clues containing text, image, or document evidence." /> : (
+            <ul className="adm-list">
+              {detClues.map((clue) => (
+                <li key={clue._id || clue.id} className="adm-row box">
+                  <span className="adm-rank r1">#{clue.order}</span>
+                  <div className="grow">
+                    <strong>{clue.title}</strong>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
+                      <small>Type: <b className="mono">{clue.evidenceType}</b> · {clue.description}</small>
+                      <Badge tone={clue.classification === 'misleading' ? 'red' : clue.classification === 'critical' ? 'purple' : clue.classification === 'neutral' ? 'gray' : 'green'}>
+                        {clue.classification || 'supporting'}
+                      </Badge>
+                    </div>
+                    <div style={{ marginTop: 6, padding: 8, background: 'var(--panel)', borderRadius: 6, fontSize: 12, color: 'var(--mute)' }}>
+                      <b>Evidence:</b> {clue.evidence}
+                    </div>
+                  </div>
+                  <div className="adm-actions">
+                    <button className="adm-icon-btn" onClick={() => openEditDetClue(clue)}><Edit3 size={14} /></button>
+                    <button className="adm-icon-btn danger" onClick={() => handleDeleteDetClue(clue)}><Trash2 size={14} /></button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Questions View */}
+      {detSubTab === 'questions' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+            <h3>Questions for {activeCase?.title || 'Selected Case'}</h3>
+            <button className="adm-btn primary sm" onClick={openCreateDetQuestion}><Plus size={14} /> Add Question</button>
+          </div>
+          {detQuestions.length === 0 ? <Empty icon={HelpCircle} title="No questions added yet" hint="Add MCQ questions for participants to solve." /> : (
+            <ul className="adm-list">
+              {detQuestions.map((q) => (
+                <li key={q._id || q.id} className="adm-row box">
+                  <span className="adm-rank r2">Q{q.order}</span>
+                  <div className="grow">
+                    <strong>{q.question}</strong>
+                    <small>Points: <b className="mono">+{q.points || 100} pts</b></small>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8 }}>
+                      {(q.options || []).map((opt, i) => (
+                        <div key={i} style={{ padding: '4px 8px', borderRadius: 6, fontSize: 12, background: i === q.correctAnswerIndex ? 'rgba(52, 211, 153, 0.15)' : 'var(--panel)', border: `1px solid ${i === q.correctAnswerIndex ? 'rgba(52, 211, 153, 0.4)' : 'transparent'}`, color: i === q.correctAnswerIndex ? 'var(--green)' : 'var(--mute)' }}>
+                          <b>{String.fromCharCode(65 + i)}:</b> {opt} {i === q.correctAnswerIndex && '✓ (Correct)'}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="adm-actions">
+                    <button className="adm-icon-btn" onClick={() => openEditDetQuestion(q)}><Edit3 size={14} /></button>
+                    <button className="adm-icon-btn danger" onClick={() => handleDeleteDetQuestion(q)}><Trash2 size={14} /></button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Hints View */}
+      {detSubTab === 'hints' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+            <h3>Investigation Hints for {activeCase?.title || 'Selected Case'}</h3>
+            <button className="adm-btn primary sm" onClick={openCreateDetHint}><Plus size={14} /> Add Hint</button>
+          </div>
+          {detHints.length === 0 ? <Empty icon={Lightbulb} title="No hints added yet" hint="Add optional hints with point penalties." /> : (
+            <ul className="adm-list">
+              {detHints.map((h) => (
+                <li key={h._id || h.id} className="adm-row box">
+                  <span className="adm-rank r3">Hint #{h.order}</span>
+                  <div className="grow">
+                    <strong>{h.hintText}</strong>
+                    <small>Penalty: <b className="warn">-{h.penalty || 20} pts</b> · Enabled: <b>{h.enabled !== false ? 'Yes' : 'No'}</b></small>
+                  </div>
+                  <div className="adm-actions">
+                    <button className="adm-icon-btn" onClick={() => openEditDetHint(h)}><Edit3 size={14} /></button>
+                    <button className="adm-icon-btn danger" onClick={() => handleDeleteDetHint(h)}><Trash2 size={14} /></button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Attempts / Participant Results View */}
+      {detSubTab === 'attempts' && (
+        <div className="adm-table-wrap">
+          <table className="adm-table t-audit">
+            <thead><tr><th>Participant</th><th>Team</th><th>Progress</th><th>Score</th><th>Hints Used</th><th>Status</th><th>Time</th></tr></thead>
+            <tbody>
+              {detAttempts.length === 0 ? (
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--mute)' }}>No participant attempts recorded yet.</td></tr>
+              ) : (
+                detAttempts.map((att) => (
+                  <tr key={att.id || att._id}>
+                    <td><strong>{att.participantName || 'Participant'}</strong><small>{att.participantEmail}</small></td>
+                    <td><span className="adm-accent">{att.teamName}</span></td>
+                    <td className="num">Q{(att.currentQuestionIndex || 0) + 1}</td>
+                    <td className="num good">{att.score || 0} pts</td>
+                    <td className="num">{(att.hintsUsed || []).length} used</td>
+                    <td>
+                      <Badge tone={att.status === 'COMPLETED' ? 'green' : att.status === 'TIME_EXPIRED' ? 'red' : 'blue'}>
+                        {att.status}
+                      </Badge>
+                    </td>
+                    <td className="mono adm-muted">{formatDate(att.startedAt)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 
   /* ============================================================================
      RENDER SECTIONS
@@ -1024,7 +1492,7 @@ export function AdminDashboardPage() {
           <Empty icon={Clock} title="No teams are playing right now" hint="Sessions appear here the moment a team starts round 1." />
         ) : (
           <div className="adm-table-wrap">
-            <table className="adm-table">
+            <table className="adm-table t-live">
               <thead><tr><th>Team</th><th>Puzzle</th><th>Solved</th><th>Score</th><th>Time used</th><th>Time left</th><th /></tr></thead>
               <tbody>
                 {liveState.playingTeams.map((s) => {
@@ -1152,8 +1620,8 @@ export function AdminDashboardPage() {
       ) : (
         <>
           <div className="adm-table-wrap">
-            <table className="adm-table">
-              <thead><tr><th>Participant</th><th>Email</th><th>Team</th><th>Profile</th><th>Role</th></tr></thead>
+            <table className="adm-table t-users">
+              <thead><tr><th>Participant</th><th>Email</th><th>Team</th><th>Profile</th><th>Access Status</th><th>Role &amp; Actions</th></tr></thead>
               <tbody>
                 {usersPg.pageItems.map((u) => {
                   const isSelf = (selfId && String(u._id) === selfId) || (selfEmail && lc(u.email) === selfEmail);
@@ -1163,10 +1631,23 @@ export function AdminDashboardPage() {
                       <td className="adm-muted">{u.email}</td>
                       <td>{u.teamName ? <span className="adm-accent">{u.teamName}</span> : <span className="adm-muted">—</span>}</td>
                       <td><Badge tone={u.isProfileComplete ? 'green' : 'amber'}>{u.isProfileComplete ? 'Complete' : 'Incomplete'}</Badge></td>
+                      <td><Badge tone={u.isAccessBlocked ? 'red' : 'green'}>{u.isAccessBlocked ? 'Access Blocked' : 'Access Granted'}</Badge></td>
                       <td>
-                        <select className="adm-select sm" value={u.role} disabled={isSelf} title={isSelf ? 'You cannot change your own role' : undefined} onChange={(e) => handleRoleChange(u, e.target.value)}>
-                          {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                        </select>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <select className="adm-select sm" value={u.role} disabled={isSelf} title={isSelf ? 'You cannot change your own role' : undefined} onChange={(e) => handleRoleChange(u, e.target.value)}>
+                            {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                          {!isSelf && (
+                            <button
+                              className={`adm-btn sm ${u.isAccessBlocked ? 'success' : 'danger'}`}
+                              onClick={() => handleToggleUserAccess(u)}
+                              title={u.isAccessBlocked ? 'Restore access for this user' : 'Block access for this user'}
+                            >
+                              {u.isAccessBlocked ? <Unlock size={12} /> : <Lock size={12} />}
+                              {u.isAccessBlocked ? 'Unblock' : 'Block'}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1191,7 +1672,7 @@ export function AdminDashboardPage() {
       ) : (
         <>
           <div className="adm-table-wrap">
-            <table className="adm-table">
+            <table className="adm-table t-teams">
               <thead><tr><th>Team</th><th>Members</th><th>Allowed size</th><th>Status</th><th /></tr></thead>
               <tbody>
                 {teamsPg.pageItems.map((t) => (
@@ -1203,6 +1684,10 @@ export function AdminDashboardPage() {
                     <td className="right">
                       <div className="adm-actions">
                         <button className="adm-btn ghost sm" onClick={() => openEditTeam(t)}><Edit3 size={13} /> Edit</button>
+                        <button className={`adm-btn sm ${t.isDisqualified ? 'success' : 'danger'}`} onClick={() => handleToggleTeamDisqualification(t)}>
+                          {t.isDisqualified ? <Unlock size={13} /> : <Lock size={13} />}
+                          {t.isDisqualified ? 'Restore' : 'Disqualify'}
+                        </button>
                         <button className="adm-btn ghost sm" onClick={() => setAdjustScoreModal({ teamId: t._id, teamName: t.name, roundNumber: roundNumbers[0], scoreDelta: 50, reason: '' })}><Award size={13} /> Score</button>
                         <button className="adm-btn danger sm" onClick={() => handleResetTeamSession(t._id, t.name)}><RotateCcw size={13} /> Reset</button>
                       </div>
@@ -1277,43 +1762,133 @@ export function AdminDashboardPage() {
   );
 
   const renderRounds = () => (
-    <section className="adm-panel">
-      <div className="adm-panel-head">
-        <div><h2>Rounds</h2><p>Open, start, lock or close each stage of the event.</p></div>
-        <button className="adm-btn primary" onClick={openCreateRound}><Plus size={15} /> Add round</button>
+    <div className="adm-stack">
+      <div className="adm-segment" role="tablist" style={{ marginBottom: 12 }}>
+        <button className={roundsSubTab === 'overview' ? 'on' : ''} onClick={() => setRoundsSubTab('overview')}>
+          <SlidersHorizontal size={14} /> Round Overview &amp; Status
+        </button>
+        <button className={roundsSubTab === 'detective' ? 'on' : ''} onClick={() => setRoundsSubTab('detective')}>
+          <Search size={14} /> Round 2: Detective Case Management ({detCases.length})
+        </button>
+        <button className={roundsSubTab === 'unlocks' ? 'on' : ''} onClick={() => setRoundsSubTab('unlocks')}>
+          <Unlock size={14} /> Team Access &amp; Round 2 Unlocks ({teams.filter((t) => (t.manualRoundUnlocks || []).some((u) => u.roundNumber === 2)).length})
+        </button>
       </div>
-      {loading && !rounds.length ? <SkeletonRows rows={3} /> : rounds.length === 0 ? (
-        <Empty icon={SlidersHorizontal} title="No rounds yet" action={<button className="adm-btn primary" onClick={openCreateRound}><Plus size={15} /> Add round</button>} />
-      ) : (
-        <div className="adm-cards">
-          {[...rounds].sort((a, b) => a.roundNumber - b.roundNumber).map((r) => (
-            <article key={r._id || r.roundNumber} className={`adm-round ${STATUS_TONE[r.status] || 'gray'}`}>
-              <div className="adm-round-top">
-                <h3>Round {r.roundNumber}: {r.title}</h3>
-                <Badge tone={STATUS_TONE[r.status] || 'gray'}>{(r.status || '').replace('_', ' ')}</Badge>
-              </div>
-              <p>{r.description || 'No description yet.'}</p>
-              <dl className="adm-meta">
-                <div><dt>Duration</dt><dd>{Math.floor((r.durationSeconds || 1800) / 60)} min</dd></div>
-                <div><dt>Min team</dt><dd>{r.minTeamSize || 2}</dd></div>
-                <div><dt>Mechanic</dt><dd>{r.mechanicType || 'puzzle'}</dd></div>
-              </dl>
-              <div className="adm-status-btns" role="group" aria-label={`Status for round ${r.roundNumber}`}>
-                {[
-                  ['LOCKED', 'Lock', Lock], ['AVAILABLE', 'Open', Unlock], ['IN_PROGRESS', 'Start', Play], ['COMPLETED', 'Close', CheckCircle2],
-                ].map(([s, label, Icon]) => (
-                  <button key={s} className={r.status === s ? 'on' : ''} disabled={r.status === s} onClick={() => handleRoundStatus(r, s)}><Icon size={13} /> {label}</button>
-                ))}
-              </div>
-              <div className="adm-actions">
-                <button className="adm-btn ghost sm grow" onClick={() => openEditRound(r)}><Edit3 size={13} /> Edit details</button>
-                {r.roundNumber > 1 && <button className="adm-icon-btn danger" onClick={() => handleDeleteRound(r)} aria-label={`Delete round ${r.roundNumber}`}><Trash2 size={15} /></button>}
-              </div>
-            </article>
-          ))}
-        </div>
+
+      {roundsSubTab === 'overview' && (
+        <section className="adm-panel">
+          <div className="adm-panel-head">
+            <div><h2>Event Rounds</h2><p>Open, start, lock or close each stage of the event.</p></div>
+            <button className="adm-btn primary" onClick={openCreateRound}><Plus size={15} /> Add round</button>
+          </div>
+          {loading && !rounds.length ? <SkeletonRows rows={3} /> : rounds.length === 0 ? (
+            <Empty icon={SlidersHorizontal} title="No rounds yet" action={<button className="adm-btn primary" onClick={openCreateRound}><Plus size={15} /> Add round</button>} />
+          ) : (
+            <div className="adm-cards">
+              {[...rounds].sort((a, b) => a.roundNumber - b.roundNumber).map((r) => (
+                <article key={r._id || r.roundNumber} className={`adm-round ${STATUS_TONE[r.status] || 'gray'}`}>
+                  <div className="adm-round-top">
+                    <h3>Round {r.roundNumber}: {r.title}</h3>
+                    <Badge tone={STATUS_TONE[r.status] || 'gray'}>{(r.status || '').replace('_', ' ')}</Badge>
+                  </div>
+                  <p>{r.description || 'No description yet.'}</p>
+                  <dl className="adm-meta">
+                    <div><dt>Duration</dt><dd>{Math.floor((r.durationSeconds || 1800) / 60)} min</dd></div>
+                    <div><dt>Min team</dt><dd>{r.minTeamSize || 2}</dd></div>
+                    <div><dt>Mechanic</dt><dd>{r.mechanicType || 'puzzle'}</dd></div>
+                  </dl>
+
+                  {r.roundNumber === 2 && (
+                    <div style={{ marginTop: 12, padding: 10, background: 'var(--ink)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid var(--line)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--sky)' }}>🕵️ Round 2 Detective Case Controls</span>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button className="adm-btn primary sm" onClick={() => setRoundsSubTab('detective')}>
+                          <Search size={13} /> Manage Cases &amp; Questions
+                        </button>
+                        <button className="adm-btn ghost sm" onClick={() => setRoundsSubTab('unlocks')}>
+                          <Unlock size={13} /> Team Unlocks
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="adm-status-btns" style={{ marginTop: 12 }} role="group" aria-label={`Status for round ${r.roundNumber}`}>
+                    {[
+                      ['LOCKED', 'Lock', Lock], ['AVAILABLE', 'Open', Unlock], ['IN_PROGRESS', 'Start', Play], ['COMPLETED', 'Close', CheckCircle2],
+                    ].map(([s, label, Icon]) => (
+                      <button key={s} className={r.status === s ? 'on' : ''} disabled={r.status === s} onClick={() => handleRoundStatus(r, s)}><Icon size={13} /> {label}</button>
+                    ))}
+                  </div>
+                  <div className="adm-actions">
+                    <button className="adm-btn ghost sm grow" onClick={() => openEditRound(r)}><Edit3 size={13} /> Edit details</button>
+                    {r.roundNumber > 1 && <button className="adm-icon-btn danger" onClick={() => handleDeleteRound(r)} aria-label={`Delete round ${r.roundNumber}`}><Trash2 size={15} /></button>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       )}
-    </section>
+
+      {roundsSubTab === 'detective' && renderDetective()}
+
+      {roundsSubTab === 'unlocks' && (
+        <section className="adm-panel">
+          <div className="adm-panel-head">
+            <div>
+              <h2>Round 2 Team Access &amp; Unlocks</h2>
+              <p>Round 2 is accessible only to teams explicitly unlocked by the Admin or qualified from Round 1.</p>
+            </div>
+          </div>
+          {teams.length === 0 ? <Empty icon={Layers} title="No teams registered yet" /> : (
+            <div className="adm-cards tight">
+              {teams.map((t) => {
+                const isRevoked = (t.qualifications || []).some((q) => q.roundNumber === 2 && q.status === 'ELIMINATED');
+                const isManuallyUnlocked = !isRevoked && (t.manualRoundUnlocks || []).some((u) => u.roundNumber === 2);
+                const isQualified = !isRevoked && (t.qualifications || []).some((q) => q.roundNumber === 1 && q.status === 'QUALIFIED');
+                const isUnlocked = isManuallyUnlocked || isQualified;
+
+                return (
+                  <div key={t._id} className="adm-unlock-card">
+                    <div className="adm-unlock-card-top">
+                      <div className="adm-unlock-card-team">
+                        <strong title={t.name}>{t.name}</strong>
+                        <div className="adm-unlock-card-meta">
+                          <span className="adm-unlock-card-code">{t.code}</span>
+                          <span>•</span>
+                          <span>{t.memberIds?.length || 0} {t.memberIds?.length === 1 ? 'member' : 'members'}</span>
+                        </div>
+                      </div>
+                      <div className="adm-unlock-card-badge">
+                        <Badge tone={isUnlocked ? 'green' : isRevoked ? 'red' : 'gray'}>
+                          {isRevoked ? '🔒 Access Revoked' : isManuallyUnlocked ? 'Manually Unlocked' : isQualified ? 'Qualified' : '🔒 Locked'}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="adm-unlock-card-actions">
+                      <button
+                        className={`adm-btn sm ${isUnlocked ? 'ghost' : 'primary'}`}
+                        onClick={() => setManualUnlockModal({ teamId: t._id, teamName: t.name, roundNumber: 2, reason: 'Admin explicitly unlocked Round 2' })}
+                      >
+                        <Unlock size={13} /> {isUnlocked ? 'Re-Grant Access' : 'Unlock Round 2'}
+                      </button>
+                      {isUnlocked && (
+                        <button
+                          className="adm-btn danger sm"
+                          onClick={() => handleManualRevoke(t._id, t.name)}
+                        >
+                          <Lock size={13} /> Lock Access
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
   );
 
   const renderScoring = () => {
@@ -1376,7 +1951,7 @@ export function AdminDashboardPage() {
               <button className="adm-btn ghost sm" onClick={exportPreview}><Download size={14} /> Export CSV</button>
             </div>
             <div className="adm-table-wrap">
-              <table className="adm-table">
+              <table className="adm-table t-rank">
                 <thead><tr><th>Rank</th><th>Team</th><th>Solved</th><th>Score</th><th>Time</th><th>Result</th></tr></thead>
                 <tbody>
                   {(rankingPreview.entries || []).map((en) => (
@@ -1399,18 +1974,49 @@ export function AdminDashboardPage() {
           <div className="adm-panel-head"><div><h2>Exceptions</h2><p>Let a specific team into a later round, outside the normal cut.</p></div></div>
           {scopedTeams.length === 0 ? <Empty icon={Layers} title="No teams to show" /> : (
             <div className="adm-cards tight">
-              {scopedTeams.map((t) => (
-                <div key={t._id} className="adm-row box">
-                  <div className="grow"><strong>{t.name}</strong><small className="mono">{t.code}</small></div>
-                  <button
-                    className="adm-btn ghost sm"
-                    disabled={!rounds.some((r) => r.roundNumber > 1)}
-                    onClick={() => setManualUnlockModal({ teamId: t._id, teamName: t.name, roundNumber: (rounds.find((r) => r.roundNumber > 1) || {}).roundNumber || 2, reason: '' })}
-                  >
-                    <Unlock size={13} /> Unlock round
-                  </button>
-                </div>
-              ))}
+              {scopedTeams.map((t) => {
+                const isRevoked = (t.qualifications || []).some((q) => q.roundNumber === 2 && q.status === 'ELIMINATED');
+                const isManuallyUnlocked = !isRevoked && (t.manualRoundUnlocks || []).some((u) => u.roundNumber === 2);
+                const isQualified = !isRevoked && (t.qualifications || []).some((q) => q.roundNumber === 1 && q.status === 'QUALIFIED');
+                const isUnlocked = isManuallyUnlocked || isQualified;
+
+                return (
+                  <div key={t._id} className="adm-unlock-card">
+                    <div className="adm-unlock-card-top">
+                      <div className="adm-unlock-card-team">
+                        <strong title={t.name}>{t.name}</strong>
+                        <div className="adm-unlock-card-meta">
+                          <span className="adm-unlock-card-code">{t.code}</span>
+                          <span>•</span>
+                          <span>{t.memberIds?.length || 0} {t.memberIds?.length === 1 ? 'member' : 'members'}</span>
+                        </div>
+                      </div>
+                      <div className="adm-unlock-card-badge">
+                        <Badge tone={isUnlocked ? 'green' : isRevoked ? 'red' : 'gray'}>
+                          {isRevoked ? '🔒 Access Revoked' : isManuallyUnlocked ? 'Manually Unlocked' : isQualified ? 'Qualified' : '🔒 Locked'}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="adm-unlock-card-actions">
+                      <button
+                        className={`adm-btn sm ${isUnlocked ? 'ghost' : 'primary'}`}
+                        disabled={!rounds.some((r) => r.roundNumber > 1)}
+                        onClick={() => setManualUnlockModal({ teamId: t._id, teamName: t.name, roundNumber: 2, reason: 'Admin exception override' })}
+                      >
+                        <Unlock size={13} /> {isUnlocked ? 'Re-Grant' : 'Unlock Round 2'}
+                      </button>
+                      {isUnlocked && (
+                        <button
+                          className="adm-btn danger sm"
+                          onClick={() => handleManualRevoke(t._id, t.name)}
+                        >
+                          <Lock size={13} /> Lock Access
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -1491,7 +2097,7 @@ export function AdminDashboardPage() {
       {filteredAuditLogs.length === 0 ? <Empty icon={FileText} title="No log entries match" /> : (
         <>
           <div className="adm-table-wrap">
-            <table className="adm-table clickable">
+            <table className="adm-table clickable t-audit">
               <thead><tr><th>Action</th><th>Administrator</th><th>Target</th><th>Time</th></tr></thead>
               <tbody>
                 {auditPg.pageItems.map((log, i) => (
@@ -1521,7 +2127,7 @@ export function AdminDashboardPage() {
 
   return (
     <AppShell>
-      <style>{STYLES}</style>
+      <style>{STYLES}{RESPONSIVE_STYLES}</style>
       <div className="adm">
         <header className="adm-hero">
           <div>
@@ -1578,11 +2184,45 @@ export function AdminDashboardPage() {
           {activeTab === 'teams' && renderTeams()}
           {activeTab === 'puzzles' && renderPuzzles()}
           {activeTab === 'rounds' && renderRounds()}
+          {activeTab === 'detective' && renderDetective()}
           {activeTab === 'scoring' && renderScoring()}
           {activeTab === 'whitelist' && renderWhitelist()}
           {activeTab === 'faqs' && renderFaqs()}
           {activeTab === 'audit' && renderAudit()}
         </main>
+
+        {/* ── MOBILE BOTTOM NAVBAR (FIXED AT BOTTOM FOR MOBILE VIEW) ── */}
+        <nav className="adm-bottom-nav" aria-label="Mobile console navigation">
+          <div className="adm-bottom-nav-inner">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const on = activeTab === tab.key;
+              return (
+                <button
+                  key={`mb-${tab.key}`}
+                  type="button"
+                  className={`adm-bottom-nav-item ${on ? 'on' : ''}`}
+                  aria-current={on ? 'page' : undefined}
+                  onClick={() => {
+                    setActiveTab(tab.key);
+                    setSearchQuery('');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                >
+                  <div className="adm-bottom-nav-icon-wrap">
+                    <Icon size={18} />
+                    {tab.count !== undefined && (
+                      <span className={`adm-bottom-badge ${tab.live && tab.count > 0 ? 'live' : ''}`}>
+                        {tab.count > 99 ? '99+' : tab.count}
+                      </span>
+                    )}
+                  </div>
+                  <span className="adm-bottom-nav-label">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </div>
 
       {/* ---------------- Modals ---------------- */}
@@ -1766,8 +2406,8 @@ export function AdminDashboardPage() {
         >
           <form id="unlock-form" onSubmit={handleManualUnlock} className="adm-form">
             <Field label="Round">
-              <select className="adm-select" value={manualUnlockModal.roundNumber} onChange={(e) => setManualUnlockModal({ ...manualUnlockModal, roundNumber: e.target.value })}>
-                {rounds.filter((r) => r.roundNumber > 1).sort((a, b) => a.roundNumber - b.roundNumber).map((r) => <option key={r.roundNumber} value={r.roundNumber}>Round {r.roundNumber}: {r.title}</option>)}
+              <select className="adm-select" value={manualUnlockModal.roundNumber || 2} onChange={(e) => setManualUnlockModal({ ...manualUnlockModal, roundNumber: parseInt(e.target.value, 10) || 2 })}>
+                <option value={2}>Round 2: Mystery Solver</option>
               </select>
             </Field>
             <Field label="Reason" hint="Saved in the audit trail."><input className="adm-input" placeholder="e.g. Technical failure during round 1" value={manualUnlockModal.reason} onChange={(e) => setManualUnlockModal({ ...manualUnlockModal, reason: e.target.value })} required /></Field>
@@ -1782,6 +2422,118 @@ export function AdminDashboardPage() {
             <div><dt>Target</dt><dd>{viewingAudit.targetType ? `${viewingAudit.targetType}: ` : ''}{viewingAudit.targetName || viewingAudit.targetId || '—'}</dd></div>
           </dl>
           <pre className="adm-json">{JSON.stringify(viewingAudit, null, 2)}</pre>
+        </Modal>
+      )}
+
+      {isDetCaseModalOpen && (
+        <Modal
+          title={editingDetCase ? 'Edit Detective Case' : 'New Detective Case'}
+          onClose={() => setIsDetCaseModalOpen(false)}
+          footer={<><button className="adm-btn ghost" onClick={() => setIsDetCaseModalOpen(false)}>Cancel</button><button className="adm-btn primary" type="submit" form="det-case-form">{editingDetCase ? 'Save Changes' : 'Create Case'}</button></>}
+        >
+          <form id="det-case-form" onSubmit={handleSaveDetCase} className="adm-form">
+            <Field label="Case Title"><input className="adm-input" placeholder="e.g. The Stark Laboratory Security Breach" value={detCaseForm.title} onChange={(e) => setDetCaseForm({ ...detCaseForm, title: e.target.value })} required /></Field>
+            <Field label="Description"><textarea rows={3} className="adm-input" placeholder="Case briefing and mystery backstory" value={detCaseForm.description} onChange={(e) => setDetCaseForm({ ...detCaseForm, description: e.target.value })} /></Field>
+            <div className="adm-grid-3 tight">
+              <Field label="Difficulty">
+                <select className="adm-select" value={detCaseForm.difficulty} onChange={(e) => setDetCaseForm({ ...detCaseForm, difficulty: e.target.value })}>
+                  <option value="Novice">Novice</option><option value="Detective">Detective</option><option value="Inspector">Inspector</option><option value="Mastermind">Mastermind</option>
+                </select>
+              </Field>
+              <Field label="Time Limit (seconds)"><input type="number" min="60" className="adm-input" value={detCaseForm.timeLimitSeconds} onChange={(e) => setDetCaseForm({ ...detCaseForm, timeLimitSeconds: parseInt(e.target.value, 10) || 1800 })} required /></Field>
+              <Field label="Maximum Score"><input type="number" min="0" className="adm-input" value={detCaseForm.maximumScore} onChange={(e) => setDetCaseForm({ ...detCaseForm, maximumScore: parseInt(e.target.value, 10) || 500 })} required /></Field>
+            </div>
+            <Field label="Status">
+              <select className="adm-select" value={detCaseForm.status} onChange={(e) => setDetCaseForm({ ...detCaseForm, status: e.target.value })}>
+                <option value="DRAFT">Draft / Unpublished</option><option value="PUBLISHED">Published</option>
+              </select>
+            </Field>
+          </form>
+        </Modal>
+      )}
+
+      {isDetClueModalOpen && (
+        <Modal
+          title={editingDetClue ? 'Edit Clue' : 'Add Clue'}
+          subtitle={`Case: ${activeCase?.title || 'Selected Case'}`}
+          onClose={() => setIsDetClueModalOpen(false)}
+          footer={<><button className="adm-btn ghost" onClick={() => setIsDetClueModalOpen(false)}>Cancel</button><button className="adm-btn primary" type="submit" form="det-clue-form">{editingDetClue ? 'Save Clue' : 'Add Clue'}</button></>}
+        >
+          <form id="det-clue-form" onSubmit={handleSaveDetClue} className="adm-form">
+            <div className="adm-grid-2 tight narrow-first">
+              <Field label="Clue Order #"><input type="number" min="1" className="adm-input" value={detClueForm.order} onChange={(e) => setDetClueForm({ ...detClueForm, order: parseInt(e.target.value, 10) || 1 })} required /></Field>
+              <Field label="Title"><input className="adm-input" placeholder="e.g. CCTV Security Footage Log" value={detClueForm.title} onChange={(e) => setDetClueForm({ ...detClueForm, title: e.target.value })} required /></Field>
+            </div>
+            <Field label="Description"><textarea rows={2} className="adm-input" placeholder="Brief context about this piece of evidence" value={detClueForm.description} onChange={(e) => setDetClueForm({ ...detClueForm, description: e.target.value })} /></Field>
+            <div className="adm-grid-2 tight">
+              <Field label="Evidence Type">
+                <select className="adm-select" value={detClueForm.evidenceType} onChange={(e) => setDetClueForm({ ...detClueForm, evidenceType: e.target.value })}>
+                  <option value="text">Text Log / Message</option><option value="image">Image URL / CCTV Snap</option><option value="document">File / Document Transcript</option>
+                </select>
+              </Field>
+              <Field label="Internal Classification (Admin Only)" hint="Hidden from participants">
+                <select className="adm-select" value={detClueForm.classification || 'supporting'} onChange={(e) => setDetClueForm({ ...detClueForm, classification: e.target.value })}>
+                  <option value="supporting">Supporting Clue (Useful)</option>
+                  <option value="neutral">Neutral Clue (Context)</option>
+                  <option value="misleading">Misleading Clue (Red Herring)</option>
+                  <option value="critical">Critical Clue (Key Keypoint)</option>
+                </select>
+              </Field>
+            </div>
+            <Field label="Evidence Data" hint="Text transcript, image link, or document content"><textarea rows={4} className="adm-input" placeholder="Paste log, Morse code, URL, or document here..." value={detClueForm.evidence} onChange={(e) => setDetClueForm({ ...detClueForm, evidence: e.target.value })} required /></Field>
+          </form>
+        </Modal>
+      )}
+
+      {isDetQuestionModalOpen && (
+        <Modal
+          title={editingDetQuestion ? 'Edit Question' : 'Add Multiple-Choice Question'}
+          subtitle={`Case: ${activeCase?.title || 'Selected Case'}`}
+          onClose={() => setIsDetQuestionModalOpen(false)}
+          footer={<><button className="adm-btn ghost" onClick={() => setIsDetQuestionModalOpen(false)}>Cancel</button><button className="adm-btn primary" type="submit" form="det-q-form">{editingDetQuestion ? 'Save Question' : 'Add Question'}</button></>}
+        >
+          <form id="det-q-form" onSubmit={handleSaveDetQuestion} className="adm-form">
+            <div className="adm-grid-2 tight narrow-first">
+              <Field label="Question Order #"><input type="number" min="1" className="adm-input" value={detQuestionForm.order} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, order: parseInt(e.target.value, 10) || 1 })} required /></Field>
+              <Field label="Points"><input type="number" min="0" className="adm-input" value={detQuestionForm.points} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, points: parseInt(e.target.value, 10) || 100 })} required /></Field>
+            </div>
+            <Field label="Question Prompt"><textarea rows={2} className="adm-input" placeholder="e.g. Who entered the laboratory at 8:42 PM?" value={detQuestionForm.question} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, question: e.target.value })} required /></Field>
+            <div className="adm-grid-2 tight">
+              <Field label="Option A"><input className="adm-input" value={detQuestionForm.optionA} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, optionA: e.target.value })} required /></Field>
+              <Field label="Option B"><input className="adm-input" value={detQuestionForm.optionB} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, optionB: e.target.value })} required /></Field>
+              <Field label="Option C"><input className="adm-input" value={detQuestionForm.optionC} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, optionC: e.target.value })} /></Field>
+              <Field label="Option D"><input className="adm-input" value={detQuestionForm.optionD} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, optionD: e.target.value })} /></Field>
+            </div>
+            <Field label="Correct Answer Index">
+              <select className="adm-select" value={detQuestionForm.correctAnswerIndex} onChange={(e) => setDetQuestionForm({ ...detQuestionForm, correctAnswerIndex: parseInt(e.target.value, 10) || 0 })}>
+                <option value={0}>Option A (Index 0)</option>
+                <option value={1}>Option B (Index 1)</option>
+                <option value={2}>Option C (Index 2)</option>
+                <option value={3}>Option D (Index 3)</option>
+              </select>
+            </Field>
+          </form>
+        </Modal>
+      )}
+
+      {isDetHintModalOpen && (
+        <Modal
+          title={editingDetHint ? 'Edit Hint' : 'Add Hint'}
+          subtitle={`Case: ${activeCase?.title || 'Selected Case'}`}
+          onClose={() => setIsDetHintModalOpen(false)}
+          footer={<><button className="adm-btn ghost" onClick={() => setIsDetHintModalOpen(false)}>Cancel</button><button className="adm-btn primary" type="submit" form="det-h-form">{editingDetHint ? 'Save Hint' : 'Add Hint'}</button></>}
+        >
+          <form id="det-h-form" onSubmit={handleSaveDetHint} className="adm-form">
+            <div className="adm-grid-2 tight narrow-first">
+              <Field label="Hint Order #"><input type="number" min="1" className="adm-input" value={detHintForm.order} onChange={(e) => setDetHintForm({ ...detHintForm, order: parseInt(e.target.value, 10) || 1 })} required /></Field>
+              <Field label="Point Penalty (e.g. 20)"><input type="number" min="0" className="adm-input" value={detHintForm.penalty} onChange={(e) => setDetHintForm({ ...detHintForm, penalty: parseInt(e.target.value, 10) || 20 })} required /></Field>
+            </div>
+            <Field label="Hint Text"><textarea rows={3} className="adm-input" placeholder="e.g. Cross-reference the RFID badge timestamps with the guard shift roster." value={detHintForm.hintText} onChange={(e) => setDetHintForm({ ...detHintForm, hintText: e.target.value })} required /></Field>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', marginTop: 6 }}>
+              <input type="checkbox" checked={detHintForm.enabled !== false} onChange={(e) => setDetHintForm({ ...detHintForm, enabled: e.target.checked })} />
+              Enable this hint for participants
+            </label>
+          </form>
         </Modal>
       )}
 
@@ -1817,7 +2569,8 @@ background:linear-gradient(135deg,#0f1d36 0%,#0a1324 60%);border:1px solid var(-
 .adm-banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r);margin-bottom:14px;font-size:13px}
 .adm-banner.error{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);color:#fecaca}
 .adm-banner span{flex:1}
-.adm-tabs{position:sticky;top:0;z-index:20;display:flex;gap:6px;overflow-x:auto;padding:8px;margin-bottom:14px;background:rgba(7,13,26,.88);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;scrollbar-width:thin}
+.adm-tabs{position:sticky;top:0;z-index:20;display:flex;gap:6px;overflow-x:auto;padding:8px;margin-bottom:14px;background:rgba(7,13,26,.88);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;scrollbar-width:none;-ms-overflow-style:none}
+.adm-tabs::-webkit-scrollbar{display:none}
 .adm-tab{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--mute);font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
 .adm-tab:hover{background:var(--panel2);color:var(--text)}
 .adm-tab.on{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.45);color:var(--sky)}
@@ -1928,7 +2681,17 @@ textarea.adm-input{resize:vertical}
 .adm-thumb-empty{display:grid;place-items:center;color:var(--dim)}
 .adm-puzzle strong{font-size:14px}.adm-puzzle small{display:block;color:var(--dim);font-size:12px;margin-top:2px}
 .adm-order{font-weight:800;color:var(--sky);min-width:22px;text-align:center}
-.adm-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}.adm-cards.tight{grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.adm-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}.adm-cards.tight{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.adm-unlock-card{display:flex;flex-direction:column;justify-content:space-between;gap:14px;padding:16px 18px;border-radius:14px;background:var(--ink);border:1px solid var(--line);box-shadow:0 4px 16px rgba(0,0,0,.25);transition:border-color .15s,box-shadow .15s}
+.adm-unlock-card:hover{border-color:rgba(56,189,248,.35);box-shadow:0 6px 22px rgba(0,0,0,.35)}
+.adm-unlock-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.adm-unlock-card-team{min-width:0;flex:1}
+.adm-unlock-card-team strong{display:block;font-size:16px;font-weight:700;color:#f8fafc;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-unlock-card-meta{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:12px;color:var(--dim)}
+.adm-unlock-card-code{font-family:var(--mono,monospace);font-weight:600;color:var(--sky);background:rgba(56,189,248,.1);padding:1px 6px;border-radius:4px;border:1px solid rgba(56,189,248,.2)}
+.adm-unlock-card-badge{flex-shrink:0}
+.adm-unlock-card-actions{display:flex;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}
+.adm-unlock-card-actions .adm-btn{flex:1;justify-content:center}
 .adm-round{display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:14px;background:var(--ink);border:1px solid var(--line);border-top:3px solid var(--line2)}
 .adm-round.green{border-top-color:var(--green)}.adm-round.blue{border-top-color:var(--sky)}.adm-round.purple{border-top-color:var(--purple)}.adm-round.red{border-top-color:var(--red)}
 .adm-round-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
@@ -2001,17 +2764,185 @@ textarea.adm-input{resize:vertical}
 .adm-toast.success{border-color:rgba(52,211,153,.5)}.adm-toast.success svg:first-child{color:#34d399}
 .adm-toast.error{border-color:rgba(248,113,113,.55)}.adm-toast.error svg:first-child{color:#f87171}
 .adm-toast span{flex:1}.adm-toast button{background:none;border:0;color:#8b9bb8;cursor:pointer;padding:2px;display:grid}
-.spin{animation:adm-spin 1s linear infinite}
+.adm-bottom-nav{display:none}
 @keyframes adm-spin{to{transform:rotate(360deg)}}
 @keyframes adm-pulse{50%{opacity:.55}}
 @keyframes adm-shimmer{to{background-position:-200% 0}}
 @keyframes adm-pop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
 @media (max-width:860px){
+.adm{padding-bottom:96px;padding-left:4px;padding-right:4px}
+.adm-bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:900;background:rgba(13,22,39,.94);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid rgba(56,189,248,.25);box-shadow:0 -8px 28px rgba(0,0,0,.65);padding:6px 8px calc(env(safe-area-inset-bottom,0px) + 6px)}
+.adm-bottom-nav-inner{display:flex;align-items:center;gap:4px;width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none;padding-bottom:2px}
+.adm-bottom-nav-inner::-webkit-scrollbar{display:none}
+.adm-bottom-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 12px;border-radius:12px;border:1px solid transparent;background:transparent;color:var(--mute);cursor:pointer;flex:0 0 auto;min-width:64px;transition:all .15s ease;-webkit-tap-highlight-color:transparent}
+.adm-bottom-nav-item:hover,.adm-bottom-nav-item:active{background:rgba(255,255,255,.05)}
+.adm-bottom-nav-item.on{color:var(--sky);background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.35);box-shadow:0 0 12px rgba(56,189,248,.18)}
+.adm-bottom-nav-icon-wrap{position:relative;display:flex;align-items:center;justify-content:center}
+.adm-bottom-badge{position:absolute;top:-5px;right:-10px;font-size:9px;font-weight:800;line-height:1;padding:2px 4px;border-radius:999px;background:var(--line2);color:var(--text);border:1px solid rgba(255,255,255,.12)}
+.adm-bottom-badge.live{background:#b45309;color:#fff;border-color:#f59e0b;animation:adm-pulse 1.6s ease-in-out infinite}
+.adm-bottom-nav-label{font-size:10px;font-weight:600;white-space:nowrap;letter-spacing:-.01em}
+.adm-tabs{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch}
+.adm-tabs::-webkit-scrollbar{display:none}
+.adm-hero{padding:16px;flex-direction:column;align-items:stretch;gap:12px}
+.adm-hero h1{font-size:21px}
+.adm-hero-side{width:100%;justify-content:space-between}
 .adm-grid-2,.adm-grid-3,.adm-puzzle-form,.adm-overlay .adm-puzzle-form{grid-template-columns:1fr}
 .adm-overlay .adm-grid-3{grid-template-columns:1fr}
-.adm-hero{padding:20px}.adm-hero h1{font-size:23px}
-.adm-puzzle{flex-wrap:wrap}.adm-faq{flex-direction:column}
+.adm-puzzle{flex-wrap:wrap}
+.adm-puzzle .adm-actions{width:100%;justify-content:flex-end;margin-top:6px}
+.adm-faq{flex-direction:column}
 .adm-cards{grid-template-columns:1fr}
+.adm-panel{padding:14px}
+.adm-panel-head{flex-direction:column;align-items:stretch;gap:10px}
+.adm-search{max-width:100%}
+.adm-toasts{right:12px;left:12px;bottom:84px;max-width:none}
+}
+@media (max-width:580px){
+.adm-kpis{grid-template-columns:repeat(2,1fr);gap:10px}
+.adm-kpi{padding:12px 14px}
+.adm-kpi-val{font-size:22px}
+.adm-status-btns{grid-template-columns:1fr 1fr;gap:6px}
+.adm-modal-foot{flex-direction:column-reverse;gap:8px}
+.adm-modal-foot .adm-btn{width:100%}
 }
 @media (prefers-reduced-motion:reduce){.adm *,.adm-overlay *,.adm-toasts *{animation:none!important;transition:none!important}}
+`;
+
+const RESPONSIVE_STYLES = `
+/* ---------- base safety ---------- */
+.adm{width:100%;overflow-x:clip}
+.adm-grid-2>*,.adm-grid-3>*,.adm-panel,.adm-row .grow,.adm-faq .grow{min-width:0}
+.adm-row strong,.adm-faq h4,.adm-table td{overflow-wrap:anywhere}
+.adm-kpis{grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))}
+.adm-cards{grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))}
+.adm-cards.tight{grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}
+.adm-modal{max-height:calc(100dvh - 40px)}
+.adm-overlay{overscroll-behavior:contain}
+
+/* ---------- laptop / small desktop ---------- */
+@media (max-width:1100px){
+  .adm-grid-3{grid-template-columns:1fr 1fr}
+  .adm-grid-3>.adm-box-actions{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}
+  .adm-grid-3>.adm-box-actions .adm-btn{flex:1 1 180px}
+  .adm-overlay .adm-grid-3{grid-template-columns:1fr 1fr}
+}
+
+/* ---------- tablet / large phone ---------- */
+@media (max-width:860px){
+  .adm-tabs{display:none}               /* bottom nav replaces it */
+  .adm-search{margin-top:2px}
+  .adm .adm-input,.adm .adm-select,.adm .adm-select.sm,
+  .adm-overlay .adm-input,.adm-overlay .adm-select{font-size:16px}  /* stop iOS zoom on focus */
+  .adm .adm-select.sm{min-height:38px}
+  .adm-icon-btn,.adm-overlay .adm-icon-btn{width:38px;height:38px}
+  .adm-btn.sm{padding:8px 12px}
+  .adm-segment{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;max-width:100%}
+  .adm-segment::-webkit-scrollbar{display:none}
+  .adm-segment button{flex:0 0 auto}
+  .adm-grid-3,.adm-overlay .adm-grid-3{grid-template-columns:1fr}
+  .adm-grid-3>.adm-box-actions{flex-direction:column}
+  .adm-grid-2.narrow-first,.adm-overlay .adm-grid-2.narrow-first{grid-template-columns:1fr}
+  .adm-inline-form{flex-direction:column}
+  .adm-inline-form .adm-btn{width:100%}
+  .adm-input-icon{min-width:0;width:100%}
+  .adm-pager{flex-direction:column;gap:8px;align-items:stretch;text-align:center}
+  .adm-pager>div{display:flex;justify-content:center;gap:10px}
+  .adm-hero-side .adm-btn{flex:1}
+  .adm-panel-head>.adm-btn,.adm-panel-head>.adm-actions{width:100%}
+  .adm-panel-head>.adm-actions .adm-select{flex:1}
+  .adm-modal{max-width:100%!important}
+}
+
+/* ---------- phones: tables become stacked cards ---------- */
+@media (max-width:760px){
+  .adm-table-wrap{border:0;overflow:visible}
+  .adm-table,.adm-table tbody{display:block;min-width:0;width:100%}
+  .adm-table thead{display:none}
+  .adm-table tbody{display:flex;flex-direction:column;gap:10px}
+  .adm-table tr{display:block;padding:4px 14px;background:var(--ink);border:1px solid var(--line);border-radius:12px}
+  .adm-table tbody tr:hover{background:var(--ink)}
+  .adm-table td{display:flex;align-items:center;justify-content:space-between;gap:14px;
+    padding:10px 0;border-bottom:1px dashed var(--line);text-align:right}
+  .adm-table td:last-child{border-bottom:0}
+  .adm-table td::before{content:"";flex:none;max-width:42%;text-align:left;color:var(--dim);
+    font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .adm-table td:empty{display:none}
+  .adm-table td.right{justify-content:flex-end}
+  .adm-table td.right::before{display:none}
+  .adm-table td small{text-align:right}
+  .adm-table .adm-actions{width:100%;justify-content:stretch}
+  .adm-table .adm-actions .adm-btn{flex:1}
+  .adm-timer{min-width:130px;align-items:flex-end}.adm-timer .adm-bar{width:100%}
+
+  .t-live td:nth-child(1)::before{content:"Team"}
+  .t-live td:nth-child(2)::before{content:"Puzzle"}
+  .t-live td:nth-child(3)::before{content:"Solved"}
+  .t-live td:nth-child(4)::before{content:"Score"}
+  .t-live td:nth-child(5)::before{content:"Time used"}
+  .t-live td:nth-child(6)::before{content:"Time left"}
+  .t-users td:nth-child(1)::before{content:"Participant"}
+  .t-users td:nth-child(2)::before{content:"Email"}
+  .t-users td:nth-child(3)::before{content:"Team"}
+  .t-users td:nth-child(4)::before{content:"Profile"}
+  .t-users td:nth-child(5)::before{content:"Role"}
+  .t-teams td:nth-child(1)::before{content:"Team"}
+  .t-teams td:nth-child(2)::before{content:"Members"}
+  .t-teams td:nth-child(3)::before{content:"Allowed size"}
+  .t-teams td:nth-child(4)::before{content:"Status"}
+  .t-rank td:nth-child(1)::before{content:"Rank"}
+  .t-rank td:nth-child(2)::before{content:"Team"}
+  .t-rank td:nth-child(3)::before{content:"Solved"}
+  .t-rank td:nth-child(4)::before{content:"Score"}
+  .t-rank td:nth-child(5)::before{content:"Time"}
+  .t-rank td:nth-child(6)::before{content:"Result"}
+  .t-audit td:nth-child(1)::before{content:"Action"}
+  .t-audit td:nth-child(2)::before{content:"Admin"}
+  .t-audit td:nth-child(3)::before{content:"Target"}
+  .t-audit td:nth-child(4)::before{content:"Time"}
+
+  .adm-row{flex-wrap:wrap}
+  .adm-puzzle .grow{flex-basis:calc(100% - 140px)}
+  .adm-puzzle .adm-actions{justify-content:space-between}
+  .adm-round-top{flex-direction:column;gap:8px}
+  .adm-faq .adm-actions{width:100%;justify-content:flex-end}
+  .adm-list.scroll{max-height:260px}
+}
+
+/* ---------- small phones: modals become bottom sheets ---------- */
+@media (max-width:580px){
+  .adm-hero{padding:14px}
+  .adm-hero p{font-size:13px}
+  .adm-hero-side{gap:8px}
+  .adm-hero-side small{order:3;width:100%}
+  .adm-panel{padding:12px;border-radius:12px}
+  .adm-overlay{padding:0;align-items:end;place-items:end stretch}
+  .adm-modal{border-radius:18px 18px 0 0;max-height:92dvh;animation:adm-sheet .2s ease-out;
+    padding-bottom:env(safe-area-inset-bottom,0px)}
+  .adm-modal-head{padding:16px 16px 0}
+  .adm-modal-body{padding:14px 16px}
+  .adm-modal-foot{padding:12px 16px;position:sticky;bottom:0;background:#0d1627}
+  .adm-overlay .adm-grid-2,.adm-overlay .adm-grid-2.tight{grid-template-columns:1fr}
+  .adm-overlay .adm-puzzle-form{gap:14px}
+  .adm-pieces,.adm-overlay .adm-pieces{grid-template-columns:repeat(4,1fr)!important}
+  .adm-meta{gap:12px}
+  .adm-status-btns button{padding:10px 4px;font-size:12px}
+  .adm-toasts{left:10px;right:10px}
+  .adm-bottom-nav-item{min-width:58px;padding:6px 9px}
+}
+@keyframes adm-sheet{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+
+/* ---------- very small phones ---------- */
+@media (max-width:380px){
+  .adm-kpis{grid-template-columns:1fr}
+  .adm-kpi-val{font-size:24px}
+  .adm-bottom-nav-label{font-size:9.5px}
+}
+
+/* ---------- short landscape phones ---------- */
+@media (max-height:480px) and (orientation:landscape){
+  .adm-bottom-nav-label{display:none}
+  .adm-bottom-nav-item{min-width:48px;padding:5px 8px}
+  .adm{padding-bottom:64px}
+  .adm-modal{max-height:calc(100dvh - 16px)}
+}
 `;

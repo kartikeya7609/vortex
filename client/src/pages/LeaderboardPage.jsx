@@ -7,10 +7,8 @@ import { API_BASE_URL, apiFetch } from '../services/api';
 const MEDAL_COLORS = ['#FFD700', '#C0C0C0', '#CD7F32'];
 
 const ROUND_TABS = [
-  { round: 1, label: 'Round 1: Puzzle Assemble' },
-  { round: 2, label: 'Round 2: Quantum Quiz' },
-  { round: 3, label: 'Round 3: Media Showcase' },
-  { round: 4, label: 'Round 4: Speed Run' },
+  { round: 1, label: 'Round 1: Tile Puzzle' },
+  { round: 2, label: 'Round 2: Mystery Solver' },
 ];
 
 export function LeaderboardPage() {

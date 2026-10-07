@@ -34,15 +34,19 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       let isManualUnlocked = false;
 
       if (team) {
-        // Check manual unlocks exception list
-        if (team.manualRoundUnlocks?.some((u) => u.roundNumber === r.roundNumber)) {
+        // Check if access to this specific round was explicitly revoked
+        const currentQual = team.qualifications?.find((q) => q.roundNumber === r.roundNumber);
+        if (currentQual && currentQual.status === 'ELIMINATED') {
+          teamQualificationStatus = 'ELIMINATED';
+        } else if (team.manualRoundUnlocks?.some((u) => u.roundNumber === r.roundNumber)) {
+          // Check manual unlocks exception list
           teamQualificationStatus = 'QUALIFIED';
           isManualUnlocked = true;
         } else if (r.roundNumber === 1) {
           // Round 1 default qualification rule for registered teams
           teamQualificationStatus = 'QUALIFIED';
         } else {
-          // For Rounds 2, 3, 4: check if team qualified in the PREVIOUS round (r.roundNumber - 1)
+          // For Round 2+: check if team qualified in the PREVIOUS round (r.roundNumber - 1)
           const prevQual = team.qualifications?.find((q) => q.roundNumber === r.roundNumber - 1);
           if (prevQual && prevQual.status === 'QUALIFIED') {
             teamQualificationStatus = 'QUALIFIED';
@@ -54,20 +58,22 @@ router.get('/dashboard', requireAuth, async (req, res) => {
         }
       }
 
-      let computedStatus = r.status;
+      let computedStatus = 'Locked';
 
       if (teamQualificationStatus === 'ELIMINATED') {
         computedStatus = 'Eliminated';
-      } else if (r.status === 'LOCKED') {
-        computedStatus = 'Locked';
-      } else if (teamQualificationStatus === 'NOT_QUALIFIED' && r.roundNumber > 1) {
-        computedStatus = 'Locked';
+      } else if (isManualUnlocked) {
+        // Admin manual unlock explicitly grants access to the team
+        computedStatus = 'Available';
+      } else if (r.roundNumber === 1) {
+        computedStatus = (r.status === 'LOCKED' || r.status === 'Locked') ? 'Locked' : 'Available';
+      } else if (teamQualificationStatus === 'QUALIFIED') {
+        // Qualified team gets access to Round 2
+        computedStatus = 'Available';
       } else if (r.status === 'COMPLETED' || r.status === 'Completed') {
         computedStatus = 'Completed';
       } else if (r.status === 'IN_PROGRESS' || r.status === 'In Progress') {
         computedStatus = 'In Progress';
-      } else if (r.status === 'ACTIVE' || r.status === 'AVAILABLE' || r.status === 'Available') {
-        computedStatus = 'Available';
       } else {
         computedStatus = 'Locked';
       }
@@ -75,14 +81,18 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       // Check current team score for this round if any
       const qualRecord = team?.qualifications?.find((q) => q.roundNumber === r.roundNumber);
 
+      const isLockedRound = computedStatus === 'Locked' && r.roundNumber > 1;
+
       return {
         id: r._id,
         roundNumber: r.roundNumber,
-        title: r.title,
-        description: r.description,
-        mechanicType: r.mechanicType,
+        title: isLockedRound ? 'Locked Round' : (r.roundNumber === 1 ? 'Tile Puzzle' : 'Mystery Solver'),
+        description: isLockedRound
+          ? '🔒 This round is currently locked by administrators. Await admin access grant to unlock.'
+          : (r.description || (r.roundNumber === 1 ? 'Sequential Image Puzzle challenge with dynamic grid slicing.' : 'Investigate crime scene evidence and clues to solve the mystery.')),
+        mechanicType: isLockedRound ? 'LOCKED' : (r.mechanicType || (r.roundNumber === 2 ? 'DETECTIVE_CASE' : 'SEQUENTIAL_PUZZLE')),
         status: computedStatus,
-        durationSeconds: r.durationSeconds,
+        durationSeconds: r.durationSeconds || 1800,
         teamQualificationStatus,
         isManualUnlocked,
         isAccessible: computedStatus === 'Available' || computedStatus === 'In Progress',
@@ -164,27 +174,38 @@ router.post('/:roundNumber/enter', requireAuth, requireProfileComplete, async (r
       });
     }
 
-    // 3. Round Availability Check
+    // 3. Round configuration lookup
     const round = await getRoundByNumber(roundNumber);
     if (!round) {
       return res.status(404).json({ success: false, message: `Round ${roundNumber} configuration not found.` });
     }
 
-    if (!['AVAILABLE', 'IN_PROGRESS'].includes(round.status)) {
-      return res.status(403).json({
-        success: false,
-        code: 'ROUND_LOCKED',
-        message: `Round ${roundNumber} is currently LOCKED by event administrators.`,
-      });
-    }
-
-    // 4. Multi-Round Gating: Check previous round qualification or manual override
+    // 4. Multi-Round Gating: Check eligibility (manual unlocks, qualification, or revocation)
     const eligibility = await verifyRoundEligibility(team._id, roundNumber);
+
     if (!eligibility.isEligible) {
       return res.status(403).json({
         success: false,
         code: eligibility.code || 'UNQUALIFIED',
         message: eligibility.reason || `Round access denied: Your team '${team.name}' has not qualified for Round ${roundNumber}.`,
+      });
+    }
+
+    // 5. Global round availability check — paused rounds cannot be entered unless admin unpauses
+    const isManuallyUnlocked = eligibility.isManualOverride === true;
+    if (round.status === 'PAUSED') {
+      return res.status(403).json({
+        success: false,
+        code: 'ROUND_PAUSED',
+        message: `Round ${roundNumber} is currently PAUSED by event administrators. Please wait for resumption.`,
+      });
+    }
+
+    if (!isManuallyUnlocked && !['AVAILABLE', 'IN_PROGRESS'].includes(round.status) && !eligibility.qualification) {
+      return res.status(403).json({
+        success: false,
+        code: 'ROUND_LOCKED',
+        message: `Round ${roundNumber} is currently LOCKED by event administrators. Only teams with special admin grants can enter.`,
       });
     }
 
@@ -236,8 +257,13 @@ router.get('/:roundNumber/game-state', requireAuth, requireProfileComplete, asyn
     if (!team || !(team.memberIds || []).some((member) => String(member?._id || member) === String(req.user._id))) {
       return res.status(403).json({ success: false, message: 'You are not a member of this team.' });
     }
+
     const round = await getRoundByNumber(roundNumber);
-    if (!round || !['AVAILABLE', 'IN_PROGRESS'].includes(round.status)) return res.status(403).json({ success: false, message: 'This round is not currently active.' });
+    // Bypass global lock for manually unlocked teams
+    const isManuallyUnlocked = eligibility.isManualOverride === true;
+    if (!round || (!isManuallyUnlocked && !['AVAILABLE', 'IN_PROGRESS'].includes(round.status))) {
+      return res.status(403).json({ success: false, message: 'This round is not currently active.' });
+    }
 
     const session = await getOrCreateRoundSession(req.user.teamId, roundNumber, req.user);
     const rawChallenges = ROUND_CHALLENGES[roundNumber] || {};

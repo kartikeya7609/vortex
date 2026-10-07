@@ -2,7 +2,7 @@ import { Team } from '../models/Team.js';
 import { User } from '../models/User.js';
 import { GameSession } from '../models/GameSession.js';
 import { LeaderboardSnapshot } from '../models/LeaderboardSnapshot.js';
-import { isDbConnected, getMemoryStore, saveDiskBackup } from './store.js';
+import { isDbConnected, getMemoryStore, saveDiskBackup, setLeaderboardFreeze, setLeaderboardPublish } from './store.js';
 
 // Default tie-break ordering specified by competition rules
 export const DEFAULT_TIE_BREAK_RULES = [
@@ -354,6 +354,12 @@ export const freezeLeaderboard = async (roundNumber, adminUser, options = {}) =>
   // Propagate qualification to all teams and members
   await propagateQualifications(roundNum, computed.entries);
 
+  // Synchronize global leaderboard settings for admin console status
+  try {
+    await setLeaderboardFreeze(true, adminUser?.email || 'admin');
+    await setLeaderboardPublish(options.isPublished !== undefined ? options.isPublished : true, adminUser?.email || 'admin');
+  } catch {}
+
   return savedSnapshot;
 };
 
@@ -376,6 +382,10 @@ export const unfreezeLeaderboard = async (roundNumber, adminUser) => {
     } catch (e) {}
   }
 
+  try {
+    await setLeaderboardFreeze(false, adminUser?.email || 'admin');
+  } catch {}
+
   const mem = getMemoryStore();
   if (mem.leaderboardSnapshots && mem.leaderboardSnapshots[roundNum]) {
     mem.leaderboardSnapshots[roundNum].isFrozen = false;
@@ -393,6 +403,10 @@ export const unfreezeLeaderboard = async (roundNumber, adminUser) => {
  */
 export const setLeaderboardPublishState = async (roundNumber, isPublished, adminUser) => {
   const roundNum = parseInt(roundNumber) || 1;
+
+  try {
+    await setLeaderboardPublish(Boolean(isPublished), adminUser?.email || 'admin');
+  } catch {}
 
   if (isDbConnected()) {
     try {
@@ -587,6 +601,85 @@ export const grantManualRoundUnlock = async (teamId, roundNumber, reason, adminU
       });
     } else {
       qual.status = 'QUALIFIED';
+      qual.isManualOverride = true;
+      qual.overrideReason = reason;
+    }
+
+    saveDiskBackup();
+    return team;
+  }
+};
+
+/**
+ * Manually revokes/locks a round for a team (admin exception override)
+ * @param {string} teamId
+ * @param {number} roundNumber
+ * @param {string} reason
+ * @param {object} adminUser
+ */
+export const revokeManualRoundUnlock = async (teamId, roundNumber, reason, adminUser) => {
+  const roundNum = parseInt(roundNumber);
+
+  if (isDbConnected()) {
+    const team = await Team.findById(teamId);
+    if (!team) throw new Error('Team not found');
+
+    if (team.manualRoundUnlocks) {
+      team.manualRoundUnlocks = team.manualRoundUnlocks.filter((u) => u.roundNumber !== roundNum);
+    }
+
+    if (!team.qualifications) team.qualifications = [];
+    let qual = team.qualifications.find((q) => q.roundNumber === roundNum);
+    if (!qual) {
+      team.qualifications.push({
+        roundNumber: roundNum,
+        status: 'ELIMINATED',
+        isManualOverride: true,
+        overrideReason: reason || 'Access revoked by administrator',
+        overrideBy: adminUser.email,
+        qualifiedAt: new Date(),
+      });
+    } else {
+      qual.status = 'ELIMINATED';
+      qual.isManualOverride = true;
+      qual.overrideReason = reason || 'Access revoked by administrator';
+      qual.overrideBy = adminUser.email;
+    }
+
+    await team.save();
+
+    // Propagate to members
+    if (team.memberIds && team.memberIds.length > 0) {
+      for (const mId of team.memberIds) {
+        const user = await User.findById(mId);
+        if (user && user.stats?.qualifiedRounds) {
+          user.stats.qualifiedRounds = user.stats.qualifiedRounds.filter((r) => r !== roundNum);
+          await user.save();
+        }
+      }
+    }
+
+    return team;
+  } else {
+    const mem = getMemoryStore();
+    const team = (mem.teams || []).find((t) => String(t._id || t.id) === String(teamId));
+    if (!team) throw new Error('Team not found');
+
+    if (team.manualRoundUnlocks) {
+      team.manualRoundUnlocks = team.manualRoundUnlocks.filter((u) => u.roundNumber !== roundNum);
+    }
+
+    if (!team.qualifications) team.qualifications = [];
+    let qual = team.qualifications.find((q) => q.roundNumber === roundNum);
+    if (!qual) {
+      team.qualifications.push({
+        roundNumber: roundNum,
+        status: 'ELIMINATED',
+        isManualOverride: true,
+        overrideReason: reason || 'Access revoked by administrator',
+      });
+    } else {
+      qual.status = 'ELIMINATED';
       qual.isManualOverride = true;
       qual.overrideReason = reason;
     }
